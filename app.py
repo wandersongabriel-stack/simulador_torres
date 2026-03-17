@@ -10,7 +10,6 @@
 # =============================
 
 import time
-import hmac
 import re
 import io
 import os
@@ -21,6 +20,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import requests
+import hmac
 
 
 # =============================
@@ -28,32 +28,40 @@ import requests
 # =============================
 st.set_page_config(page_title="Painel de Torres", layout="wide")
 
-
-def check_login() -> bool:
+def check_login():
     if st.session_state.get("logged_in", False):
         return True
 
+    # Exibe apenas a tela de login até autenticar
     st.title("Login")
-    st.caption("Acesso restrito ao simulador.")
+    st.caption("Entre para acessar o simulador.")
 
     usuario = st.text_input("Usuário", key="login_user")
     senha = st.text_input("Senha", type="password", key="login_pass")
 
-    if st.button("Entrar", key="login_button"):
-        user_ok = hmac.compare_digest(str(usuario), str(st.secrets["app_auth"]["user"]))
-        pass_ok = hmac.compare_digest(str(senha), str(st.secrets["app_auth"]["password"]))
+    if st.button("Entrar", type="primary"):
+        user_ok = hmac.compare_digest(
+            str(usuario),
+            str(st.secrets["app_auth"]["user"])
+        )
+        pass_ok = hmac.compare_digest(
+            str(senha),
+            str(st.secrets["app_auth"]["password"])
+        )
 
         if user_ok and pass_ok:
             st.session_state["logged_in"] = True
+            st.session_state.pop("login_pass", None)
             st.rerun()
         else:
             st.error("Usuário ou senha inválidos.")
 
-    return False
+    st.stop()
 
 
 if not check_login():
     st.stop()
+
 
 TARGET_MIN_DEFAULT = 10000
 TARGET_MAX_DEFAULT = 10090
@@ -766,9 +774,9 @@ def df_to_excel_bytes(sheets: dict) -> bytes:
 def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
     # 1) Fonte API (CADMAT)
     if st.session_state.get("use_api", False):
-        api_url = st.session_state.get("api_url", DEFAULT_API_URL)
-        api_user = st.session_state.get("api_user", "WEBSERVICE")
-        api_pass = st.session_state.get("api_pass", "1")
+        api_url = st.secrets["api"]["url"]
+        api_user = st.secrets["api"]["user"]
+        api_pass = st.secrets["api"]["password"]
         api_table = st.session_state.get("api_table", DEFAULT_API_TABLE)
 
         try:
@@ -1475,19 +1483,19 @@ def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kit
 with st.sidebar:
     st.header("Fonte de dados")
 
-    if st.button("Sair", key="logout_button"):
-        st.session_state["logged_in"] = False
-        st.rerun()
-
     # Sempre usar API
     st.session_state["use_api"] = True
 
     if st.session_state["use_api"]:
         st.subheader("Conexão API")
-        st.session_state["api_url"] = st.secrets["api"]["url"]
-        st.session_state["api_user"] = st.secrets["api"]["user"]
-        st.session_state["api_pass"] = st.secrets["api"]["password"]
-        st.session_state["api_table"] = "CADMAT"
+        st.caption("A conexão com a API está protegida e configurada via secrets.")
+        st.code(st.secrets["api"]["url"], language=None)
+
+        st.session_state["api_table"] = st.text_input(
+            "Tabela/SELECT (opcional)",
+            value=st.session_state.get("api_table", "CADMAT"),
+            help="No modo paginado, este campo é ignorado. Use os grupos e opções de paginação abaixo."
+        )
 
         st.session_state["lista_grupos"] = ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]
         st.session_state["only_stock_gt0"] = True
@@ -1495,13 +1503,17 @@ with st.sidebar:
 
         st.markdown("**Classificação (C gênero / BR tipo)**")
         st.caption("Usado para separar C Feminino/Masculino e BR Trio/Grande/Demais.")
-        st.caption("Conexão protegida via st.secrets.")
 
         if st.button("Atualizar agora (limpar cache API)"):
             fetch_lookup_table.clear()
             fetch_cadmat_paginado.clear()
             st.session_state.pop("api_diag", None)
             st.info("Cache da API limpo. A base será recarregada na próxima atualização.")
+
+        if st.button("Sair"):
+            for k in ["logged_in", "login_user", "login_pass"]:
+                st.session_state.pop(k, None)
+            st.rerun()
 
         st.divider()
 
