@@ -10,6 +10,7 @@
 # =============================
 
 import time
+import hmac
 import re
 import io
 import os
@@ -27,20 +28,27 @@ import requests
 # =============================
 st.set_page_config(page_title="Painel de Torres", layout="wide")
 
-import hmac
 
-def check_login():
+def check_login() -> bool:
     if st.session_state.get("logged_in", False):
         return True
 
     st.title("Login")
+    st.caption("Acesso restrito ao simulador.")
 
-    user = st.text_input("Usuário")
-    pwd = st.text_input("Senha", type="password")
+    usuario = st.text_input("Usuário", key="login_user")
+    senha = st.text_input("Senha", type="password", key="login_pass")
 
-    if st.button("Entrar"):
-        user_ok = hmac.compare_digest(user, st.secrets["app_auth"]["user"])
-        pass_ok = hmac.compare_digest(pwd, st.secrets["app_auth"]["password"])
+    if st.button("Entrar", key="login_button"):
+        user_ok = hmac.compare_digest(
+            str(usuario),
+            str(st.secrets["app_auth"]["user"])
+        )
+        pass_ok = hmac.compare_digest(
+            str(senha),
+            str(st.secrets["app_auth"]["password"])
+        )
+
         if user_ok and pass_ok:
             st.session_state["logged_in"] = True
             st.rerun()
@@ -49,9 +57,9 @@ def check_login():
 
     return False
 
+
 if not check_login():
     st.stop()
-
 
 TARGET_MIN_DEFAULT = 10000
 TARGET_MAX_DEFAULT = 10090
@@ -444,17 +452,33 @@ def load_classificacao_from_bytes(cat_bytes: bytes, gen_bytes: bytes) -> pd.Data
 
     return cls
 
-def _api_get_table(base_url: str, usuario: str, senha: str, tabela_sql: str, timeout: int = 60) -> list[dict]:
-    """Chama a API e devolve a lista de registros (Data['table']). Lida com respostas vazias/erro."""
+def _api_get_table(
+    base_url: str,
+    usuario: str,
+    senha: str,
+    tabela_sql: str,
+    timeout: int = 60,
+    raise_on_error: bool = True,
+) -> list[dict]:
+    """Chama a API e devolve a lista de registros (Data['table'])."""
     headers = {"Usuario": usuario, "Senha": senha, "Tabela": tabela_sql}
-    r = requests.get(base_url, headers=headers, timeout=timeout)
-    if r.status_code == 404:
+    try:
+        r = requests.get(base_url, headers=headers, timeout=timeout)
+        if r.status_code == 404:
+            return []
+        r.raise_for_status()
+    except requests.RequestException:
+        if raise_on_error:
+            raise
         return []
-    r.raise_for_status()
+
     try:
         data = r.json()
     except Exception:
+        if raise_on_error:
+            raise
         return []
+
     if isinstance(data, str):
         return []
     table = data.get("table") if isinstance(data, dict) else None
@@ -463,6 +487,28 @@ def _api_get_table(base_url: str, usuario: str, senha: str, tabela_sql: str, tim
     if isinstance(table, list):
         return table
     return []
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_lookup_table(base_url: str, usuario: str, senha: str, table_name: str) -> pd.DataFrame:
+    sql = f"SELECT codigo, nome FROM {table_name}"
+    rows = _api_get_table(base_url, usuario, senha, sql, timeout=90, raise_on_error=False)
+    if not rows:
+        rows = _api_get_table(base_url, usuario, senha, table_name, timeout=90, raise_on_error=False)
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return pd.DataFrame(columns=["codigo", "nome"])
+
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    if "codigo" not in df.columns:
+        df["codigo"] = ""
+    if "nome" not in df.columns:
+        df["nome"] = ""
+
+    df["codigo"] = df["codigo"].astype(str).str.strip().str.upper().str.zfill(2)
+    df["nome"] = df["nome"].astype(str).str.strip().str.upper()
+    return df[["codigo", "nome"]].drop_duplicates().copy()
 
 def fetch_cadmat_paginado(
     base_url: str,
@@ -576,143 +622,119 @@ def df_single_excel_bytes(df: pd.DataFrame, sheet_name: str) -> bytes:
 
 def build_raw_base_from_api(
     cadmat_df: pd.DataFrame,
-    cls: pd.DataFrame,
+    tabcol_df: pd.DataFrame | None = None,
+    tablin_df: pd.DataFrame | None = None,
+    tabgrp_df: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict]:
 
     cad = cadmat_df.copy()
-    cad.columns = [str(c).strip() for c in cad.columns]
-
-    rename_map = {}
-    for a, b in [("Grupo", "grupo"), ("Referencia", "referencia"), ("Qtdreal", "qtdreal"), ("Prc_venda", "prc_venda")]:
-        if a in cad.columns and b not in cad.columns:
-            rename_map[a] = b
-
-    if rename_map:
-        cad.rename(columns=rename_map, inplace=True)
+    cad.columns = [str(c).strip().lower() for c in cad.columns]
 
     needed = ["grupo", "referencia", "qtdreal", "prc_venda"]
     missing = [c for c in needed if c not in cad.columns]
-
     if missing:
         raise ValueError(f"CADMAT não trouxe colunas esperadas: {missing}")
 
+    for opt in ["gradecol", "gradelin", "gradegrp"]:
+        if opt not in cad.columns:
+            cad[opt] = ""
+
     cad["Sku"] = cad.apply(
         lambda r: norm_codigo(make_codigo(r["grupo"], r["referencia"])),
-        axis=1
+        axis=1,
     )
-
     cad["Estoque"] = cad["qtdreal"].apply(parse_pt_decimal)
     cad["Preco"] = cad["prc_venda"].apply(parse_pt_decimal)
-
     cad["Estoque"] = np.floor(cad["Estoque"].fillna(0)).astype(int)
+    cad = cad[(cad["Estoque"] > 0) & (cad["Preco"].notna()) & (cad["Preco"] > 0)].copy()
 
-    cad = cad[
-        (cad["Estoque"] > 0) &
-        (cad["Preco"].notna()) &
-        (cad["Preco"] > 0)
-    ].copy()
+    cad["Grupo_norm"] = cad["grupo"].astype(str).str.strip().str.upper()
+    cad["gradecol"] = cad["gradecol"].fillna("").astype(str).str.strip().str.upper().str.zfill(2)
+    cad["gradelin"] = cad["gradelin"].fillna("").astype(str).str.strip().str.upper().str.zfill(2)
+    cad["gradegrp"] = cad["gradegrp"].fillna("").astype(str).str.strip().str.upper().str.zfill(2)
 
-    # =============================
-    # CRIA GRUPO A PARTIR DO SKU
-    # =============================
-    cad["Grupo_norm"] = cad["Sku"].str.extract(r"^([A-Z]+)")
+    base = cad.copy()
 
-    cls2 = cls.copy()
-    cls2["codigo"] = cls2["codigo"].apply(norm_codigo)
+    if tabcol_df is not None and not tabcol_df.empty:
+        tc = tabcol_df.copy()
+        tc["codigo"] = tc["codigo"].astype(str).str.strip().str.upper().str.zfill(2)
+        tc["nome"] = tc["nome"].astype(str).str.strip().str.upper()
+        base = base.merge(tc.rename(columns={"codigo": "gradecol", "nome": "tabcol_nome"}), on="gradecol", how="left")
+    else:
+        base["tabcol_nome"] = ""
 
-    base = cad.merge(
-        cls2,
-        left_on="Sku",
-        right_on="codigo",
-        how="left"
-    )
+    if tablin_df is not None and not tablin_df.empty:
+        tl = tablin_df.copy()
+        tl["codigo"] = tl["codigo"].astype(str).str.strip().str.upper().str.zfill(2)
+        tl["nome"] = tl["nome"].astype(str).str.strip().str.upper()
+        base = base.merge(tl.rename(columns={"codigo": "gradelin", "nome": "tablin_nome"}), on="gradelin", how="left")
+    else:
+        base["tablin_nome"] = ""
 
-    # defaults seguros
-    base["is_trio"] = base["is_trio"].fillna(False)
-    base["is_grande"] = base["is_grande"].fillna(False)
-    base["is_fem"] = base["is_fem"].fillna(False)
-    base["is_masc"] = base["is_masc"].fillna(False)
-    base["tem_cadastro_cat"] = base["tem_cadastro_cat"].fillna(False)
-    base["banho_valido"] = base["banho_valido"].fillna(False)
+    if tabgrp_df is not None and not tabgrp_df.empty:
+        tg = tabgrp_df.copy()
+        tg["codigo"] = tg["codigo"].astype(str).str.strip().str.upper().str.zfill(2)
+        tg["nome"] = tg["nome"].astype(str).str.strip().str.upper()
+        base = base.merge(tg.rename(columns={"codigo": "gradegrp", "nome": "tabgrp_nome"}), on="gradegrp", how="left")
+    else:
+        base["tabgrp_nome"] = ""
 
-    # =============================
-    # REGRA NOVA:
-    # - só entra no cálculo o item que EXISTE na categoria_produto
-    # - e que tenha banho válido
-    # =============================
-    # Importante:
-    # - API traz tudo mesmo
-    # - aqui é onde o item é barrado da base tratada
-    # - remove se:
-    #   1) NÃO existir na categoria_produto
-    #   2) OU o banho for inválido
-    mask_sem_cadastro = (base["tem_cadastro_cat"] == False)
-    mask_banho_invalido = (base["banho_valido"] == False)
-    mask_bloqueio = mask_sem_cadastro | mask_banho_invalido
+    for c in ["tabcol_nome", "tablin_nome", "tabgrp_nome"]:
+        base[c] = base[c].fillna("").astype(str).str.strip().str.upper()
 
-    itens_bloqueados_banho = base.loc[
-        mask_bloqueio,
-        ["Sku", "Grupo_norm", "Estoque", "Preco"]
-    ].copy()
-
-    base = base.loc[~mask_bloqueio].copy()
-
-    # =============================
-    # FLAGS USADAS PELO ALGORITMO
-    # =============================
     base["BASE_Corrente_Feminina"] = (
-        (base["Grupo_norm"] == "C") &
-        (base["is_fem"])
+        (base["Grupo_norm"] == "C") & (base["gradelin"] == "09")
     ).astype(int)
-
     base["BASE_Corrente_Masculina"] = (
-        (base["Grupo_norm"] == "C") &
-        (base["is_masc"])
+        (base["Grupo_norm"] == "C") & (base["gradelin"] == "11")
     ).astype(int)
-
     base["BASE_Trio"] = (
-        (base["Grupo_norm"] == "BR") &
-        (base["is_trio"])
+        (base["Grupo_norm"] == "BR") & (base["gradelin"] == "19")
     ).astype(int)
-
     base["TIPO_Brinco_Grande"] = (
-        (base["Grupo_norm"] == "BR") &
-        (base["is_grande"])
+        (base["Grupo_norm"] == "BR") & (base["gradecol"] == "05")
     ).astype(int)
+    base["eh_ouro"] = base["gradegrp"].eq("01")
 
-    # =============================
-    # DIAGNÓSTICO
-    # =============================
-    diag = {}
-
-    c_items = base[base["Grupo_norm"] == "C"]
-    diag["c_sem_genero"] = c_items[
-        (c_items["BASE_Corrente_Feminina"] == 0) &
-        (c_items["BASE_Corrente_Masculina"] == 0)
-    ][["Sku", "Estoque", "Preco"]].head(200)
-
-    br_items = base[base["Grupo_norm"] == "BR"]
-    diag["br_sem_tipo"] = br_items[
-        (br_items["BASE_Trio"] == 0) &
-        (br_items["TIPO_Brinco_Grande"] == 0)
-    ][["Sku", "Estoque", "Preco"]].head(200)
-
-    diag["itens_bloqueados_banho"] = itens_bloqueados_banho.head(200)
-
-    # =============================
-    # BASE FINAL PARA O APP
-    # =============================
-    df_raw = base[
-        [
-            "Sku",
-            "Estoque",
-            "Preco",
-            "BASE_Corrente_Feminina",
-            "BASE_Corrente_Masculina",
-            "BASE_Trio",
-            "TIPO_Brinco_Grande",
-        ]
+    itens_nao_ouro = base.loc[
+        ~base["eh_ouro"],
+        ["Sku", "Grupo_norm", "Estoque", "Preco", "gradegrp", "tabgrp_nome"],
     ].copy()
+    itens_nao_ouro["motivo"] = "Não é ouro"
+
+    base = base.loc[base["eh_ouro"]].copy()
+    base = base.loc[
+        (base["Grupo_norm"] != "C")
+        | (base["BASE_Corrente_Feminina"] == 1)
+        | (base["BASE_Corrente_Masculina"] == 1)
+    ].copy()
+
+    diag = {}
+    c_items = base[base["Grupo_norm"] == "C"].copy()
+    diag["c_classificados"] = c_items[["Sku", "gradelin", "tablin_nome", "Estoque", "Preco"]].head(300)
+    diag["c_fora_regra_genero"] = cad.loc[
+        (cad["Grupo_norm"] == "C") & (cad["gradegrp"].eq("01")) & (~cad["gradelin"].isin(["09", "11"])),
+        ["Sku", "gradelin", "gradegrp", "Estoque", "Preco"],
+    ].head(200)
+
+    br_items = base[base["Grupo_norm"] == "BR"].copy()
+    diag["br_classificados"] = br_items[["Sku", "gradecol", "tabcol_nome", "gradelin", "tablin_nome", "Estoque", "Preco"]].head(300)
+    diag["br_sem_tipo"] = br_items.loc[
+        (br_items["BASE_Trio"] == 0) & (br_items["TIPO_Brinco_Grande"] == 0),
+        ["Sku", "gradecol", "tabcol_nome", "gradelin", "tablin_nome", "Estoque", "Preco"],
+    ].head(200)
+
+    diag["itens_nao_ouro"] = itens_nao_ouro.head(300)
+
+    df_raw = base[[
+        "Sku",
+        "Estoque",
+        "Preco",
+        "BASE_Corrente_Feminina",
+        "BASE_Corrente_Masculina",
+        "BASE_Trio",
+        "TIPO_Brinco_Grande",
+    ]].copy()
 
     return df_raw, diag
 
@@ -750,28 +772,41 @@ def df_to_excel_bytes(sheets: dict) -> bytes:
 def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
     # 1) Fonte API (CADMAT)
     if st.session_state.get("use_api", False):
-        api_url = st.secrets["api"]["url"]
-        api_user = st.secrets["api"]["user"]
-        api_pass = st.secrets["api"]["password"]
+        api_url = st.session_state.get("api_url", DEFAULT_API_URL)
+        api_user = st.session_state.get("api_user", "WEBSERVICE")
+        api_pass = st.session_state.get("api_pass", "1")
         api_table = st.session_state.get("api_table", DEFAULT_API_TABLE)
 
-        cat_bytes = bytes_from_local_file(DEFAULT_CAT_PATH)
-        gen_bytes = bytes_from_local_file(DEFAULT_GEN_PATH)
+        try:
+            tabcol = fetch_lookup_table(api_url, api_user, api_pass, "TABCOL")
+        except Exception as e:
+            st.warning(f"Falha ao consultar TABCOL: {e}")
+            tabcol = pd.DataFrame(columns=["codigo", "nome"])
 
-        cls = load_classificacao_from_bytes(cat_bytes, gen_bytes)
+        try:
+            tablin = fetch_lookup_table(api_url, api_user, api_pass, "TABLIN")
+        except Exception as e:
+            st.warning(f"Falha ao consultar TABLIN: {e}")
+            tablin = pd.DataFrame(columns=["codigo", "nome"])
+
+        try:
+            tabgrp = fetch_lookup_table(api_url, api_user, api_pass, "TABGRP")
+        except Exception as e:
+            st.warning(f"Falha ao consultar TABGRP: {e}")
+            tabgrp = pd.DataFrame(columns=["codigo", "nome"])
+
         cad = fetch_cadmat_paginado(
             api_url,
             api_user,
             api_pass,
             grupos=st.session_state.get("lista_grupos", ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]),
-            colunas=["grupo", "referencia", "qtdreal", "prc_venda"],
+            colunas=["grupo", "referencia", "descricao", "caracter", "qtdreal", "prc_venda", "gradecol", "gradelin", "gradegrp"],
             only_stock_gt0=st.session_state.get("only_stock_gt0", True),
             max_pages_per_group=int(st.session_state.get("max_pages_per_group", 5000)),
             timeout=90,
         )
 
-        df_raw, diag = build_raw_base_from_api(cad, cls)
-
+        df_raw, diag = build_raw_base_from_api(cad, tabcol, tablin, tabgrp)
         st.session_state["api_diag"] = diag
 
         b = df_to_excel_bytes({"base_api": df_raw})
@@ -1445,18 +1480,23 @@ def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kit
 # =============================
 with st.sidebar:
     st.header("Fonte de dados")
+    if st.button("Sair", key="logout_button"):
+        st.session_state["logged_in"] = False
+        st.rerun()
+
 
     # Sempre usar API
     st.session_state["use_api"] = True
 
     if st.session_state["use_api"]:
         st.subheader("Conexão API")
-        st.session_state["api_url"] = st.text_input("Base URL", value=st.session_state.get("api_url", DEFAULT_API_URL))
-        st.session_state["api_table"] = st.text_input(
-            "Tabela/SELECT (opcional)",
-            value=st.session_state.get("api_table", "CADMAT"),
-            help="No modo paginado, este campo é ignorado. Use os grupos e opções de paginação abaixo."
-        )
+
+        st.session_state["api_url"] = st.secrets["api"]["url"]
+        st.session_state["api_user"] = st.secrets["api"]["user"]
+        st.session_state["api_pass"] = st.secrets["api"]["password"]
+        st.session_state["api_table"] = "CADMAT"
+
+        st.caption("Conexão protegida via st.secrets.")
 
         st.session_state["lista_grupos"] = ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]
         st.session_state["only_stock_gt0"] = True
@@ -1466,8 +1506,8 @@ with st.sidebar:
         st.caption("Usado para separar C Feminino/Masculino e BR Trio/Grande/Demais.")
 
         if st.button("Atualizar agora (limpar cache API)"):
-            fetch_cadmat_api.clear()
-            load_classificacao_from_bytes.clear()
+            fetch_lookup_table.clear()
+            fetch_cadmat_paginado.clear()
             st.session_state.pop("api_diag", None)
             st.info("Cache da API limpo. A base será recarregada na próxima atualização.")
 
