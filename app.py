@@ -1481,6 +1481,7 @@ def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kit
 # UI - Sidebar
 # =============================
 with st.sidebar:
+    st.write("SIDEBAR OK")
     st.header("Fonte de dados")
 
     # Sempre usar API
