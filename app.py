@@ -113,8 +113,10 @@ np.random.seed(SEED)
 
 # Base default no repo
 DEFAULT_BASE_PATH = "base_ativa.xlsx"
+DEFAULT_CAT_PATH = r"C:\Sistema torres\categoria_produto.xlsx"
+DEFAULT_GEN_PATH = r"C:\Sistema torres\genero_produto.xlsx"
 DEFAULT_API_URL = "http://177.39.19.116/WebAPIFeniciaOCA/table/List2"
-DEFAULT_API_TABLE = "CADMAT"
+DEFAULT_API_TABLE = "SELECT grupo, referencia, qtdreal, prc_venda FROM CADMAT"
 
 
 # =============================
@@ -362,7 +364,27 @@ def parse_pt_decimal(x) -> float:
     except Exception:
         return np.nan
 
-# =============================
+@st.cache_data(show_spinner=False)
+def load_classificacao_from_bytes(cat_bytes: bytes, gen_bytes: bytes) -> pd.DataFrame:
+    """
+    Consolida as duas planilhas em um lookup por 'codigo'.
+
+    Regras novas:
+    - BR com banho vazio/nulo é inválido
+    - BR com banho contendo 'Ródio' ou 'Rodio' é inválido
+    - BR com banho 'Não definido' / 'Nao definido' é inválido
+    - a invalidação não depende da API deixar de trazer o item;
+      ela só serve para barrar o item na base tratada após o merge.
+    """
+    df_cat = pd.read_excel(io.BytesIO(cat_bytes)).copy()
+    df_gen = pd.read_excel(io.BytesIO(gen_bytes)).copy()
+
+    for d in (df_cat, df_gen):
+        if "codigo" not in d.columns:
+            raise ValueError("Planilhas de classificação precisam ter a coluna 'codigo'.")
+        d["codigo"] = d["codigo"].apply(norm_codigo)
+
+    # =============================
     # categoria_produto: trio / grande / validação de banho
     # =============================
     base = df_cat.get("base", pd.Series([""] * len(df_cat))).astype(str).str.strip().str.upper()
@@ -468,6 +490,137 @@ def _api_get_table(
         return table
     return []
 
+
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_lookup_table(base_url: str, usuario: str, senha: str, table_name: str) -> pd.DataFrame:
+    sql = f"SELECT codigo, nome FROM {table_name}"
+    rows = _api_get_table(base_url, usuario, senha, sql, timeout=90, raise_on_error=False)
+    if not rows:
+        rows = _api_get_table(base_url, usuario, senha, table_name, timeout=90, raise_on_error=False)
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return pd.DataFrame(columns=["codigo", "nome"])
+
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    if "codigo" not in df.columns:
+        df["codigo"] = ""
+    if "nome" not in df.columns:
+        df["nome"] = ""
+
+    df["codigo"] = df["codigo"].astype(str).str.strip().str.upper().str.zfill(2)
+    df["nome"] = df["nome"].astype(str).str.strip().str.upper()
+    return df[["codigo", "nome"]].drop_duplicates().copy()
+
+def fetch_cadmat_paginado(
+    base_url: str,
+    usuario: str,
+    senha: str,
+    grupos: list[str],
+    colunas: list[str] | None = None,
+    only_stock_gt0: bool = True,
+    max_pages_per_group: int = 5000,
+    timeout: int = 60,
+) -> pd.DataFrame:
+    """Replica a paginação do Power BI: para cada grupo, pagina por referencia (referencia > last_ref)."""
+    if colunas is None:
+        colunas = ["grupo", "referencia", "qtdreal", "prc_venda"]
+    cols_sql = ", ".join(colunas)
+
+    all_rows: list[dict] = []
+    for g in grupos:
+        g_clean = _to_str_clean(g).strip()
+        if not g_clean:
+            continue
+
+        last_ref = ""
+        pages = 0
+
+        while pages < max_pages_per_group:
+            where_parts = [f"grupo = '{g_clean}'", f"referencia > '{last_ref}'"]
+            if only_stock_gt0:
+                where_parts.insert(1, "qtdreal > 0")
+            where_sql = " AND ".join(where_parts)
+
+            sql = f"SELECT {cols_sql} FROM CADMAT WHERE {where_sql} ORDER BY referencia"
+            rows = _api_get_table(base_url, usuario, senha, sql, timeout=timeout)
+
+            if not rows:
+                break
+
+            all_rows.extend(rows)
+
+            try:
+                last_ref_new = str(rows[-1].get("referencia", "")).strip()
+            except Exception:
+                last_ref_new = ""
+
+            if not last_ref_new or last_ref_new == last_ref:
+                break
+
+            last_ref = last_ref_new
+            pages += 1
+
+    return pd.DataFrame(all_rows)
+
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_cadmat_api(base_url: str, usuario: str, senha: str, tabela_header: str) -> pd.DataFrame:
+    """Busca CADMAT via API (JSON) e retorna DataFrame."""
+    headers = {"Usuario": usuario, "Senha": senha, "Tabela": tabela_header}
+    r = requests.get(base_url, headers=headers, timeout=90)
+    r.raise_for_status()
+    data = r.json()
+    rows = data.get("table", [])
+    return pd.DataFrame(rows)
+
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_cadmat_full_bruto(
+    base_url: str,
+    usuario: str,
+    senha: str,
+    timeout: int = 90,
+) -> pd.DataFrame:
+    """
+    Baixa a CADMAT bruta igual ao teste.py:
+    - pagina por referencia > last_ref
+    - sem merge com categoria/genero
+    - sem filtros de banho
+    - sem classificação do app
+    """
+    cols = (
+        "grupo,referencia,descricao,caracter,qtdreal,pu_mat,prc_venda,"
+        "unid_emb,qtd_emb,unid_mat,prc_venda2,prc_venda3,peso_unit,marca,"
+        "prc_venda4,barra,val_larg,val_comp,barra_emb,ncm"
+    )
+
+    all_rows = []
+    last_ref = ""
+
+    while True:
+        sql = f"SELECT {cols} FROM CADMAT WHERE referencia > '{last_ref}' ORDER BY referencia"
+        rows = _api_get_table(base_url, usuario, senha, sql, timeout=timeout)
+
+        if not rows:
+            break
+
+        all_rows.extend(rows)
+
+        last_ref_new = str(rows[-1].get("referencia", "")).strip()
+        if not last_ref_new or last_ref_new == last_ref:
+            break
+
+        last_ref = last_ref_new
+        time.sleep(0.10)
+
+    return pd.DataFrame(all_rows)
+
+
+def df_single_excel_bytes(df: pd.DataFrame, sheet_name: str) -> bytes:
+    bio = io.BytesIO()
+    with pd.ExcelWriter(bio, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+    bio.seek(0)
+    return bio.getvalue()
 
 def build_raw_base_from_api(
     cadmat_df: pd.DataFrame,
@@ -587,6 +740,12 @@ def build_raw_base_from_api(
 
     return df_raw, diag
 
+def bytes_from_local_file(path: str) -> bytes:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Não encontrei o arquivo '{path}'.")
+    with open(path, "rb") as f:
+        return f.read()
+
 @st.cache_data(show_spinner=False)
 def load_base_from_bytes(xlsx_bytes: bytes) -> pd.DataFrame:
     df = pd.read_excel(io.BytesIO(xlsx_bytes))
@@ -618,6 +777,8 @@ def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
         api_url = st.secrets["api"]["url"]
         api_user = st.secrets["api"]["user"]
         api_pass = st.secrets["api"]["password"]
+        api_table = st.session_state.get("api_table", DEFAULT_API_TABLE)
+
         try:
             tabcol = fetch_lookup_table(api_url, api_user, api_pass, "TABCOL")
         except Exception as e:
@@ -652,7 +813,7 @@ def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
 
         b = df_to_excel_bytes({"base_api": df_raw})
         base = load_base_from_bytes(b)
-        return base, "API CADMAT", b
+        return base, f"API CADMAT ({api_table[:35]}...)", b
 
     # 2) Fonte Excel (upload admin em sessão)
     if "base_bytes" in st.session_state and st.session_state["base_bytes"]:
@@ -1330,6 +1491,12 @@ with st.sidebar:
         st.caption("A conexão com a API está protegida e configurada via secrets.")
         st.code(st.secrets["api"]["url"], language=None)
 
+        st.session_state["api_table"] = st.text_input(
+            "Tabela/SELECT (opcional)",
+            value=st.session_state.get("api_table", "CADMAT"),
+            help="No modo paginado, este campo é ignorado. Use os grupos e opções de paginação abaixo."
+        )
+
         st.session_state["lista_grupos"] = ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]
         st.session_state["only_stock_gt0"] = True
         st.session_state["max_pages_per_group"] = 5000
@@ -1390,6 +1557,16 @@ with st.sidebar:
     st.header("Geração de kits")
     max_kits = st.number_input("Gerar até (máx kits)", min_value=1, max_value=500, value=DEFAULT_MAX_KITS, step=10)
 
+    if not st.session_state.get("use_api", False):
+        st.divider()
+        st.header("Atualizar base (admin)")
+        up = st.file_uploader("Enviar nova base (xlsx)", type=["xlsx"], key="admin_upload")
+        if up is not None:
+            st.session_state["base_bytes"] = up.getvalue()
+            st.session_state["base_name"] = up.name
+            st.success("Base carregada para esta sessão.")
+            st.info("Para persistir permanentemente, substitua o arquivo 'base_ativa.xlsx' no repositório.")
+
 
 # =============================
 # MAIN
@@ -1427,31 +1604,15 @@ st.markdown("<hr/>", unsafe_allow_html=True)
 if st.session_state.get("use_api", False):
     with st.expander("Diagnóstico da classificação (API)", expanded=False):
         diag = st.session_state.get("api_diag", {}) or {}
-        c_ok = diag.get("c_classificados")
-        c_sem = diag.get("c_fora_regra_genero")
-        br_ok = diag.get("br_classificados")
+        c_sem = diag.get("c_sem_genero")
         br_sem = diag.get("br_sem_tipo")
-        br_bloq = diag.get("itens_nao_ouro")
+        br_bloq = diag.get("itens_bloqueados_banho")
 
-        st.markdown("**C classificados** — correntes que entraram como C_FEMININO/C_MASCULINO.")
-        if isinstance(c_ok, pd.DataFrame) and len(c_ok):
-            st.dataframe(c_ok, use_container_width=True, hide_index=True)
-        else:
-            st.caption("Nenhum item C classificado (ou ainda não carregou a base).")
-
-        st.divider()
-        st.markdown("**C (corrente) fora da regra de gênero** — ouro, mas sem TABLIN 09/11.")
+        st.markdown("**C (corrente) sem gênero definido** — esses itens não viram C_FEMININO/C_MASCULINO e podem cair em OUTROS.")
         if isinstance(c_sem, pd.DataFrame) and len(c_sem):
             st.dataframe(c_sem, use_container_width=True, hide_index=True)
         else:
             st.caption("Nenhum item C sem gênero (ou ainda não carregou a base).")
-
-        st.divider()
-        st.markdown("**BR classificados** — brincos já separados em trio/grande/demais conforme os códigos da API.")
-        if isinstance(br_ok, pd.DataFrame) and len(br_ok):
-            st.dataframe(br_ok, use_container_width=True, hide_index=True)
-        else:
-            st.caption("Nenhum item BR classificado (ou ainda não carregou a base).")
 
         st.divider()
         st.markdown("**BR sem marcação TRIO/GRANDE** — esses itens entram como BR_DEMAIS (fallback).")
