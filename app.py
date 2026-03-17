@@ -26,7 +26,11 @@ import hmac
 # =============================
 # CONFIG GERAL
 # =============================
-st.set_page_config(page_title="Painel de Torres", layout="wide")
+st.set_page_config(
+    page_title="Painel de Torres",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 def check_login():
     if st.session_state.get("logged_in", False):
@@ -122,8 +126,8 @@ DEFAULT_API_TABLE = "SELECT grupo, referencia, qtdreal, prc_venda FROM CADMAT"
 # =============================
 # CSS (PowerBI-like + inputs legíveis)
 # =============================
+"""
 st.markdown(
-    """
     <style>
     :root{
       --bg:#070a0f;
@@ -264,11 +268,10 @@ st.markdown(
 
     hr { border: 0; height: 1px; background: var(--border); margin: 14px 0; }
     .muted { color: var(--muted); font-size: 13px; }
-    </style>
-    """,
+    </style>,
     unsafe_allow_html=True
 )
-
+"""
 
 # =============================
 # BASE PREP
