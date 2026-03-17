@@ -1452,7 +1452,7 @@ with st.sidebar:
     if st.session_state["use_api"]:
         st.subheader("Conexão API")
         st.session_state["api_url"] = st.text_input("Base URL", value=st.session_state.get("api_url", DEFAULT_API_URL))
-                        st.session_state["api_table"] = st.text_input(
+        st.session_state["api_table"] = st.text_input(
             "Tabela/SELECT (opcional)",
             value=st.session_state.get("api_table", "CADMAT"),
             help="No modo paginado, este campo é ignorado. Use os grupos e opções de paginação abaixo."
