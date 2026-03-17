@@ -32,7 +32,6 @@ def check_login():
     if st.session_state.get("logged_in", False):
         return True
 
-    # Exibe apenas a tela de login até autenticar
     st.title("Login")
     st.caption("Entre para acessar o simulador.")
 
@@ -393,10 +392,8 @@ def load_classificacao_from_bytes(cat_bytes: bytes, gen_bytes: bytes) -> pd.Data
     df_cat["is_trio"] = base.eq("TRIO") | modelo.str.contains("TRIO", na=False)
     df_cat["is_grande"] = modelo.str.contains("GRANDE", na=False)
 
-    # marca que o código existe na categoria_produto
     df_cat["tem_cadastro_cat"] = True
 
-    # regra do banho
     if "banho" in df_cat.columns:
         banho_raw = df_cat["banho"]
 
