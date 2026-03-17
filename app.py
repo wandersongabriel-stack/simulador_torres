@@ -26,11 +26,7 @@ import hmac
 # =============================
 # CONFIG GERAL
 # =============================
-st.set_page_config(
-    page_title="Painel de Torres",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="Painel de Torres", layout="wide")
 
 def check_login():
     if st.session_state.get("logged_in", False):
@@ -126,152 +122,137 @@ DEFAULT_API_TABLE = "SELECT grupo, referencia, qtdreal, prc_venda FROM CADMAT"
 # =============================
 # CSS (PowerBI-like + inputs legíveis)
 # =============================
-"""
-st.markdown(
-    <style>
-    :root{
-      --bg:#070a0f;
-      --panel:#0f1420;
-      --panel2:#0b111b;
-      --border:#202a3a;
-      --border2:#2a3750;
-      --text:#e9eef8;
-      --muted:#a7b4c7;
-      --accent:#5aa9ff;
-      --accent2:#7c5cff;
-    }
+st.markdown("""
+<style>
 
-    .stApp { background: radial-gradient(1200px 600px at 20% 0%, #0d1630 0%, var(--bg) 55%); }
-    html, body, [class*="css"]  { color: var(--text); }
+.stApp { background: radial-gradient(1200px 600px at 20% 0%, #0d1630 0%, var(--bg) 55%); }
+html, body, [class*="css"]  { color: var(--text); }
 
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden; height: 0px;}
-    [data-testid="stDecoration"] {display: none;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+[data-testid="stDecoration"] {display: none;}
 
-    .block-container { padding-top: 0.85rem; padding-bottom: 2rem; }
+.block-container { padding-top: 0.85rem; padding-bottom: 2rem; }
 
-    section[data-testid="stSidebar"]{
-      background: linear-gradient(180deg, #0b1220 0%, #070a0f 100%);
-      border-right: 1px solid var(--border);
-    }
+section[data-testid="stSidebar"]{
+  background: linear-gradient(180deg, #0b1220 0%, #070a0f 100%);
+  border-right: 1px solid var(--border);
+}
 
-    .topbar{
-      background: linear-gradient(90deg, rgba(90,169,255,0.18) 0%, rgba(124,92,255,0.12) 45%, rgba(0,0,0,0) 100%);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 14px 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-    }
-    .topbar-title{
-      font-size: 28px;
-      font-weight: 800;
-      letter-spacing: 0.8px;
-      margin: 0;
-      line-height: 1.15;
-    }
-    .topbar-sub{
-      color: var(--muted);
-      margin-top: 6px;
-      font-size: 13px;
-    }
+.topbar{
+  background: linear-gradient(90deg, rgba(90,169,255,0.18) 0%, rgba(124,92,255,0.12) 45%, rgba(0,0,0,0) 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
+.topbar-title{
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  margin: 0;
+  line-height: 1.15;
+}
+.topbar-sub{
+  color: var(--muted);
+  margin-top: 6px;
+  font-size: 13px;
+}
 
-    div[data-testid="stMetric"]{
-      background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
-      border: 1px solid var(--border);
-      padding: 14px 14px 10px 14px;
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-    }
-    div[data-testid="stMetric"] label { color: var(--muted) !important; }
-    div[data-testid="stMetric"] [data-testid="stMetricValue"]{
-      font-size: 34px;
-      font-weight: 800;
-    }
+div[data-testid="stMetric"]{
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+  border: 1px solid var(--border);
+  padding: 14px 14px 10px 14px;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
+div[data-testid="stMetric"] label { color: var(--muted) !important; }
+div[data-testid="stMetric"] [data-testid="stMetricValue"]{
+  font-size: 34px;
+  font-weight: 800;
+}
 
-    .stTabs [data-baseweb="tab-list"]{
-      gap: 8px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 8px;
-    }
-    .stTabs [data-baseweb="tab"]{
-      background: rgba(255,255,255,0.03);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 8px 14px;
-      color: var(--muted);
-    }
-    .stTabs [aria-selected="true"]{
-      background: linear-gradient(90deg, rgba(90,169,255,0.18), rgba(124,92,255,0.15));
-      border: 1px solid var(--border2);
-      color: var(--text);
-    }
+.stTabs [data-baseweb="tab-list"]{
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.stTabs [data-baseweb="tab"]{
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--muted);
+}
+.stTabs [aria-selected="true"]{
+  background: linear-gradient(90deg, rgba(90,169,255,0.18), rgba(124,92,255,0.15));
+  border: 1px solid var(--border2);
+  color: var(--text);
+}
 
-    .stButton>button, .stDownloadButton>button{
-      border-radius: 12px !important;
-      border: 1px solid var(--border2) !important;
-      background: linear-gradient(180deg, rgba(90,169,255,0.16), rgba(90,169,255,0.06)) !important;
-      color: var(--text) !important;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-    }
-    .stButton>button:hover, .stDownloadButton>button:hover{
-      border-color: rgba(90,169,255,0.55) !important;
-      transform: translateY(-1px);
-    }
+.stButton>button, .stDownloadButton>button{
+  border-radius: 12px !important;
+  border: 1px solid var(--border2) !important;
+  background: linear-gradient(180deg, rgba(90,169,255,0.16), rgba(90,169,255,0.06)) !important;
+  color: var(--text) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.stButton>button:hover, .stDownloadButton>button:hover{
+  border-color: rgba(90,169,255,0.55) !important;
+  transform: translateY(-1px);
+}
 
-    div[data-baseweb="input"] input, textarea{
-      background: rgba(255,255,255,0.03) !important;
-      border: 1px solid var(--border) !important;
-      color: var(--text) !important;
-      border-radius: 12px !important;
-    }
+div[data-baseweb="input"] input, textarea{
+  background: rgba(255,255,255,0.03) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  border-radius: 12px !important;
+}
 
-    /* Sidebar inputs com texto ESCURO (legível) */
-    section[data-testid="stSidebar"] div[data-baseweb="input"] input{
-      color: #0b0f18 !important;
-      background: rgba(255,255,255,0.90) !important;
-      border: 1px solid rgba(255,255,255,0.18) !important;
-    }
-    section[data-testid="stSidebar"] div[data-baseweb="input"] input::placeholder{
-      color: rgba(11,15,24,0.55) !important;
-    }
-    section[data-testid="stSidebar"] label{
-      color: rgba(233,238,248,0.92) !important;
-    }
-    section[data-testid="stSidebar"] button[aria-label="Increment"],
-    section[data-testid="stSidebar"] button[aria-label="Decrement"]{
-      background: rgba(255,255,255,0.85) !important;
-      border: 1px solid rgba(255,255,255,0.18) !important;
-    }
-    section[data-testid="stSidebar"] button[aria-label="Increment"] svg,
-    section[data-testid="stSidebar"] button[aria-label="Decrement"] svg{
-      fill: #0b0f18 !important;
-    }
+/* Sidebar inputs */
+section[data-testid="stSidebar"] div[data-baseweb="input"] input{
+  color: #0b0f18 !important;
+  background: rgba(255,255,255,0.90) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+}
+section[data-testid="stSidebar"] div[data-baseweb="input"] input::placeholder{
+  color: rgba(11,15,24,0.55) !important;
+}
+section[data-testid="stSidebar"] label{
+  color: rgba(233,238,248,0.92) !important;
+}
+section[data-testid="stSidebar"] button[aria-label="Increment"],
+section[data-testid="stSidebar"] button[aria-label="Decrement"]{
+  background: rgba(255,255,255,0.85) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+}
+section[data-testid="stSidebar"] button[aria-label="Increment"] svg,
+section[data-testid="stSidebar"] button[aria-label="Decrement"] svg{
+  fill: #0b0f18 !important;
+}
 
-    .dataframe-shell{
-      background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-    }
+.dataframe-shell{
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
 
-    [data-testid="stDataFrame"]{
-      border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.06);
-    }
-    [data-testid="stDataFrame"] tbody tr:hover{
-      background: rgba(90,169,255,0.08) !important;
-    }
+[data-testid="stDataFrame"]{
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+[data-testid="stDataFrame"] tbody tr:hover{
+  background: rgba(90,169,255,0.08) !important;
+}
 
-    hr { border: 0; height: 1px; background: var(--border); margin: 14px 0; }
-    .muted { color: var(--muted); font-size: 13px; }
-    </style>,
-    unsafe_allow_html=True
-)
-"""
+hr { border: 0; height: 1px; background: var(--border); margin: 14px 0; }
+.muted { color: var(--muted); font-size: 13px; }
+
+</style>
+""", unsafe_allow_html=True)
 
 # =============================
 # BASE PREP
@@ -1484,7 +1465,7 @@ def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kit
 # UI - Sidebar
 # =============================
 with st.sidebar:
-    st.write("SIDEBAR OK")
+    
     st.header("Fonte de dados")
 
     # Sempre usar API
