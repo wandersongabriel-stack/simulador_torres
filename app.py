@@ -113,146 +113,160 @@ np.random.seed(SEED)
 
 # Base default no repo
 DEFAULT_BASE_PATH = "base_ativa.xlsx"
-DEFAULT_CAT_PATH = r"C:\Sistema torres\categoria_produto.xlsx"
-DEFAULT_GEN_PATH = r"C:\Sistema torres\genero_produto.xlsx"
 DEFAULT_API_URL = "http://177.39.19.116/WebAPIFeniciaOCA/table/List2"
-DEFAULT_API_TABLE = "SELECT grupo, referencia, qtdreal, prc_venda FROM CADMAT"
+DEFAULT_API_TABLE = "CADMAT"
 
 
 # =============================
 # CSS (PowerBI-like + inputs legíveis)
 # =============================
-st.markdown("""
-<style>
+st.markdown(
+    """
+    <style>
+    :root{
+      --bg:#070a0f;
+      --panel:#0f1420;
+      --panel2:#0b111b;
+      --border:#202a3a;
+      --border2:#2a3750;
+      --text:#e9eef8;
+      --muted:#a7b4c7;
+      --accent:#5aa9ff;
+      --accent2:#7c5cff;
+    }
 
-.stApp { background: radial-gradient(1200px 600px at 20% 0%, #0d1630 0%, var(--bg) 55%); }
-html, body, [class*="css"]  { color: var(--text); }
+    .stApp { background: radial-gradient(1200px 600px at 20% 0%, #0d1630 0%, var(--bg) 55%); }
+    html, body, [class*="css"]  { color: var(--text); }
 
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-[data-testid="stDecoration"] {display: none;}
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    [data-testid="stToolbar"] {visibility: hidden; height: 0px;}
+    [data-testid="stDecoration"] {display: none;}
 
-.block-container { padding-top: 3.2rem; padding-bottom: 2rem; }
+    .block-container { padding-top: 0.85rem; padding-bottom: 2rem; }
 
-section[data-testid="stSidebar"]{
-  background: linear-gradient(180deg, #0b1220 0%, #070a0f 100%);
-  border-right: 1px solid var(--border);
-}
+    section[data-testid="stSidebar"]{
+      background: linear-gradient(180deg, #0b1220 0%, #070a0f 100%);
+      border-right: 1px solid var(--border);
+    }
 
-.topbar{
-  background: linear-gradient(90deg, rgba(90,169,255,0.18) 0%, rgba(124,92,255,0.12) 45%, rgba(0,0,0,0) 100%);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-}
-.topbar-title{
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: 0.8px;
-  margin: 0;
-  line-height: 1.15;
-}
-.topbar-sub{
-  color: var(--muted);
-  margin-top: 6px;
-  font-size: 13px;
-}
+    .topbar{
+      background: linear-gradient(90deg, rgba(90,169,255,0.18) 0%, rgba(124,92,255,0.12) 45%, rgba(0,0,0,0) 100%);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    .topbar-title{
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      margin: 0;
+      line-height: 1.15;
+    }
+    .topbar-sub{
+      color: var(--muted);
+      margin-top: 6px;
+      font-size: 13px;
+    }
 
-div[data-testid="stMetric"]{
-  background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
-  border: 1px solid var(--border);
-  padding: 14px 14px 10px 14px;
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-}
-div[data-testid="stMetric"] label { color: var(--muted) !important; }
-div[data-testid="stMetric"] [data-testid="stMetricValue"]{
-  font-size: 34px;
-  font-weight: 800;
-}
+    div[data-testid="stMetric"]{
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+      border: 1px solid var(--border);
+      padding: 14px 14px 10px 14px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    div[data-testid="stMetric"] label { color: var(--muted) !important; }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"]{
+      font-size: 34px;
+      font-weight: 800;
+    }
 
-.stTabs [data-baseweb="tab-list"]{
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
-}
-.stTabs [data-baseweb="tab"]{
-  background: rgba(255,255,255,0.03);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 8px 14px;
-  color: var(--muted);
-}
-.stTabs [aria-selected="true"]{
-  background: linear-gradient(90deg, rgba(90,169,255,0.18), rgba(124,92,255,0.15));
-  border: 1px solid var(--border2);
-  color: var(--text);
-}
+    .stTabs [data-baseweb="tab-list"]{
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .stTabs [data-baseweb="tab"]{
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--muted);
+    }
+    .stTabs [aria-selected="true"]{
+      background: linear-gradient(90deg, rgba(90,169,255,0.18), rgba(124,92,255,0.15));
+      border: 1px solid var(--border2);
+      color: var(--text);
+    }
 
-.stButton>button, .stDownloadButton>button{
-  border-radius: 12px !important;
-  border: 1px solid var(--border2) !important;
-  background: linear-gradient(180deg, rgba(90,169,255,0.16), rgba(90,169,255,0.06)) !important;
-  color: var(--text) !important;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-}
-.stButton>button:hover, .stDownloadButton>button:hover{
-  border-color: rgba(90,169,255,0.55) !important;
-  transform: translateY(-1px);
-}
+    .stButton>button, .stDownloadButton>button{
+      border-radius: 12px !important;
+      border: 1px solid var(--border2) !important;
+      background: linear-gradient(180deg, rgba(90,169,255,0.16), rgba(90,169,255,0.06)) !important;
+      color: var(--text) !important;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    .stButton>button:hover, .stDownloadButton>button:hover{
+      border-color: rgba(90,169,255,0.55) !important;
+      transform: translateY(-1px);
+    }
 
-div[data-baseweb="input"] input, textarea{
-  background: rgba(255,255,255,0.03) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
-  border-radius: 12px !important;
-}
+    div[data-baseweb="input"] input, textarea{
+      background: rgba(255,255,255,0.03) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text) !important;
+      border-radius: 12px !important;
+    }
 
-/* Sidebar inputs */
-section[data-testid="stSidebar"] div[data-baseweb="input"] input{
-  color: #0b0f18 !important;
-  background: rgba(255,255,255,0.90) !important;
-  border: 1px solid rgba(255,255,255,0.18) !important;
-}
-section[data-testid="stSidebar"] div[data-baseweb="input"] input::placeholder{
-  color: rgba(11,15,24,0.55) !important;
-}
-section[data-testid="stSidebar"] label{
-  color: rgba(233,238,248,0.92) !important;
-}
-section[data-testid="stSidebar"] button[aria-label="Increment"],
-section[data-testid="stSidebar"] button[aria-label="Decrement"]{
-  background: rgba(255,255,255,0.85) !important;
-  border: 1px solid rgba(255,255,255,0.18) !important;
-}
-section[data-testid="stSidebar"] button[aria-label="Increment"] svg,
-section[data-testid="stSidebar"] button[aria-label="Decrement"] svg{
-  fill: #0b0f18 !important;
-}
+    /* Sidebar inputs com texto ESCURO (legível) */
+    section[data-testid="stSidebar"] div[data-baseweb="input"] input{
+      color: #0b0f18 !important;
+      background: rgba(255,255,255,0.90) !important;
+      border: 1px solid rgba(255,255,255,0.18) !important;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="input"] input::placeholder{
+      color: rgba(11,15,24,0.55) !important;
+    }
+    section[data-testid="stSidebar"] label{
+      color: rgba(233,238,248,0.92) !important;
+    }
+    section[data-testid="stSidebar"] button[aria-label="Increment"],
+    section[data-testid="stSidebar"] button[aria-label="Decrement"]{
+      background: rgba(255,255,255,0.85) !important;
+      border: 1px solid rgba(255,255,255,0.18) !important;
+    }
+    section[data-testid="stSidebar"] button[aria-label="Increment"] svg,
+    section[data-testid="stSidebar"] button[aria-label="Decrement"] svg{
+      fill: #0b0f18 !important;
+    }
 
-.dataframe-shell{
-  background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-}
+    .dataframe-shell{
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
 
-[data-testid="stDataFrame"]{
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.06);
-}
-[data-testid="stDataFrame"] tbody tr:hover{
-  background: rgba(90,169,255,0.08) !important;
-}
+    [data-testid="stDataFrame"]{
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    [data-testid="stDataFrame"] tbody tr:hover{
+      background: rgba(90,169,255,0.08) !important;
+    }
 
-hr { border: 0; height: 1px; background: var(--border); margin: 14px 0; }
-.muted { color: var(--muted); font-size: 13px; }
+    hr { border: 0; height: 1px; background: var(--border); margin: 14px 0; }
+    .muted { color: var(--muted); font-size: 13px; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-</style>
-""", unsafe_allow_html=True)
 
 # =============================
 # BASE PREP
@@ -348,27 +362,7 @@ def parse_pt_decimal(x) -> float:
     except Exception:
         return np.nan
 
-@st.cache_data(show_spinner=False)
-def load_classificacao_from_bytes(cat_bytes: bytes, gen_bytes: bytes) -> pd.DataFrame:
-    """
-    Consolida as duas planilhas em um lookup por 'codigo'.
-
-    Regras novas:
-    - BR com banho vazio/nulo é inválido
-    - BR com banho contendo 'Ródio' ou 'Rodio' é inválido
-    - BR com banho 'Não definido' / 'Nao definido' é inválido
-    - a invalidação não depende da API deixar de trazer o item;
-      ela só serve para barrar o item na base tratada após o merge.
-    """
-    df_cat = pd.read_excel(io.BytesIO(cat_bytes)).copy()
-    df_gen = pd.read_excel(io.BytesIO(gen_bytes)).copy()
-
-    for d in (df_cat, df_gen):
-        if "codigo" not in d.columns:
-            raise ValueError("Planilhas de classificação precisam ter a coluna 'codigo'.")
-        d["codigo"] = d["codigo"].apply(norm_codigo)
-
-    # =============================
+# =============================
     # categoria_produto: trio / grande / validação de banho
     # =============================
     base = df_cat.get("base", pd.Series([""] * len(df_cat))).astype(str).str.strip().str.upper()
@@ -474,137 +468,6 @@ def _api_get_table(
         return table
     return []
 
-
-@st.cache_data(show_spinner=False, ttl=300)
-def fetch_lookup_table(base_url: str, usuario: str, senha: str, table_name: str) -> pd.DataFrame:
-    sql = f"SELECT codigo, nome FROM {table_name}"
-    rows = _api_get_table(base_url, usuario, senha, sql, timeout=90, raise_on_error=False)
-    if not rows:
-        rows = _api_get_table(base_url, usuario, senha, table_name, timeout=90, raise_on_error=False)
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return pd.DataFrame(columns=["codigo", "nome"])
-
-    df.columns = [str(c).strip().lower() for c in df.columns]
-    if "codigo" not in df.columns:
-        df["codigo"] = ""
-    if "nome" not in df.columns:
-        df["nome"] = ""
-
-    df["codigo"] = df["codigo"].astype(str).str.strip().str.upper().str.zfill(2)
-    df["nome"] = df["nome"].astype(str).str.strip().str.upper()
-    return df[["codigo", "nome"]].drop_duplicates().copy()
-
-def fetch_cadmat_paginado(
-    base_url: str,
-    usuario: str,
-    senha: str,
-    grupos: list[str],
-    colunas: list[str] | None = None,
-    only_stock_gt0: bool = True,
-    max_pages_per_group: int = 5000,
-    timeout: int = 60,
-) -> pd.DataFrame:
-    """Replica a paginação do Power BI: para cada grupo, pagina por referencia (referencia > last_ref)."""
-    if colunas is None:
-        colunas = ["grupo", "referencia", "qtdreal", "prc_venda"]
-    cols_sql = ", ".join(colunas)
-
-    all_rows: list[dict] = []
-    for g in grupos:
-        g_clean = _to_str_clean(g).strip()
-        if not g_clean:
-            continue
-
-        last_ref = ""
-        pages = 0
-
-        while pages < max_pages_per_group:
-            where_parts = [f"grupo = '{g_clean}'", f"referencia > '{last_ref}'"]
-            if only_stock_gt0:
-                where_parts.insert(1, "qtdreal > 0")
-            where_sql = " AND ".join(where_parts)
-
-            sql = f"SELECT {cols_sql} FROM CADMAT WHERE {where_sql} ORDER BY referencia"
-            rows = _api_get_table(base_url, usuario, senha, sql, timeout=timeout)
-
-            if not rows:
-                break
-
-            all_rows.extend(rows)
-
-            try:
-                last_ref_new = str(rows[-1].get("referencia", "")).strip()
-            except Exception:
-                last_ref_new = ""
-
-            if not last_ref_new or last_ref_new == last_ref:
-                break
-
-            last_ref = last_ref_new
-            pages += 1
-
-    return pd.DataFrame(all_rows)
-
-@st.cache_data(show_spinner=False, ttl=300)
-def fetch_cadmat_api(base_url: str, usuario: str, senha: str, tabela_header: str) -> pd.DataFrame:
-    """Busca CADMAT via API (JSON) e retorna DataFrame."""
-    headers = {"Usuario": usuario, "Senha": senha, "Tabela": tabela_header}
-    r = requests.get(base_url, headers=headers, timeout=90)
-    r.raise_for_status()
-    data = r.json()
-    rows = data.get("table", [])
-    return pd.DataFrame(rows)
-
-@st.cache_data(show_spinner=False, ttl=300)
-def fetch_cadmat_full_bruto(
-    base_url: str,
-    usuario: str,
-    senha: str,
-    timeout: int = 90,
-) -> pd.DataFrame:
-    """
-    Baixa a CADMAT bruta igual ao teste.py:
-    - pagina por referencia > last_ref
-    - sem merge com categoria/genero
-    - sem filtros de banho
-    - sem classificação do app
-    """
-    cols = (
-        "grupo,referencia,descricao,caracter,qtdreal,pu_mat,prc_venda,"
-        "unid_emb,qtd_emb,unid_mat,prc_venda2,prc_venda3,peso_unit,marca,"
-        "prc_venda4,barra,val_larg,val_comp,barra_emb,ncm"
-    )
-
-    all_rows = []
-    last_ref = ""
-
-    while True:
-        sql = f"SELECT {cols} FROM CADMAT WHERE referencia > '{last_ref}' ORDER BY referencia"
-        rows = _api_get_table(base_url, usuario, senha, sql, timeout=timeout)
-
-        if not rows:
-            break
-
-        all_rows.extend(rows)
-
-        last_ref_new = str(rows[-1].get("referencia", "")).strip()
-        if not last_ref_new or last_ref_new == last_ref:
-            break
-
-        last_ref = last_ref_new
-        time.sleep(0.10)
-
-    return pd.DataFrame(all_rows)
-
-
-def df_single_excel_bytes(df: pd.DataFrame, sheet_name: str) -> bytes:
-    bio = io.BytesIO()
-    with pd.ExcelWriter(bio, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
-    bio.seek(0)
-    return bio.getvalue()
 
 def build_raw_base_from_api(
     cadmat_df: pd.DataFrame,
@@ -724,12 +587,6 @@ def build_raw_base_from_api(
 
     return df_raw, diag
 
-def bytes_from_local_file(path: str) -> bytes:
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Não encontrei o arquivo '{path}'.")
-    with open(path, "rb") as f:
-        return f.read()
-
 @st.cache_data(show_spinner=False)
 def load_base_from_bytes(xlsx_bytes: bytes) -> pd.DataFrame:
     df = pd.read_excel(io.BytesIO(xlsx_bytes))
@@ -761,8 +618,6 @@ def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
         api_url = st.secrets["api"]["url"]
         api_user = st.secrets["api"]["user"]
         api_pass = st.secrets["api"]["password"]
-        api_table = st.session_state.get("api_table", DEFAULT_API_TABLE)
-
         try:
             tabcol = fetch_lookup_table(api_url, api_user, api_pass, "TABCOL")
         except Exception as e:
@@ -797,7 +652,7 @@ def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
 
         b = df_to_excel_bytes({"base_api": df_raw})
         base = load_base_from_bytes(b)
-        return base, f"API CADMAT ({api_table[:35]}...)", b
+        return base, "API CADMAT", b
 
     # 2) Fonte Excel (upload admin em sessão)
     if "base_bytes" in st.session_state and st.session_state["base_bytes"]:
@@ -1465,7 +1320,6 @@ def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kit
 # UI - Sidebar
 # =============================
 with st.sidebar:
-    
     st.header("Fonte de dados")
 
     # Sempre usar API
@@ -1475,12 +1329,6 @@ with st.sidebar:
         st.subheader("Conexão API")
         st.caption("A conexão com a API está protegida e configurada via secrets.")
         st.code(st.secrets["api"]["url"], language=None)
-
-        st.session_state["api_table"] = st.text_input(
-            "Tabela/SELECT (opcional)",
-            value=st.session_state.get("api_table", "CADMAT"),
-            help="No modo paginado, este campo é ignorado. Use os grupos e opções de paginação abaixo."
-        )
 
         st.session_state["lista_grupos"] = ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]
         st.session_state["only_stock_gt0"] = True
@@ -1542,16 +1390,6 @@ with st.sidebar:
     st.header("Geração de kits")
     max_kits = st.number_input("Gerar até (máx kits)", min_value=1, max_value=500, value=DEFAULT_MAX_KITS, step=10)
 
-    if not st.session_state.get("use_api", False):
-        st.divider()
-        st.header("Atualizar base (admin)")
-        up = st.file_uploader("Enviar nova base (xlsx)", type=["xlsx"], key="admin_upload")
-        if up is not None:
-            st.session_state["base_bytes"] = up.getvalue()
-            st.session_state["base_name"] = up.name
-            st.success("Base carregada para esta sessão.")
-            st.info("Para persistir permanentemente, substitua o arquivo 'base_ativa.xlsx' no repositório.")
-
 
 # =============================
 # MAIN
@@ -1589,15 +1427,31 @@ st.markdown("<hr/>", unsafe_allow_html=True)
 if st.session_state.get("use_api", False):
     with st.expander("Diagnóstico da classificação (API)", expanded=False):
         diag = st.session_state.get("api_diag", {}) or {}
-        c_sem = diag.get("c_sem_genero")
+        c_ok = diag.get("c_classificados")
+        c_sem = diag.get("c_fora_regra_genero")
+        br_ok = diag.get("br_classificados")
         br_sem = diag.get("br_sem_tipo")
-        br_bloq = diag.get("itens_bloqueados_banho")
+        br_bloq = diag.get("itens_nao_ouro")
 
-        st.markdown("**C (corrente) sem gênero definido** — esses itens não viram C_FEMININO/C_MASCULINO e podem cair em OUTROS.")
+        st.markdown("**C classificados** — correntes que entraram como C_FEMININO/C_MASCULINO.")
+        if isinstance(c_ok, pd.DataFrame) and len(c_ok):
+            st.dataframe(c_ok, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Nenhum item C classificado (ou ainda não carregou a base).")
+
+        st.divider()
+        st.markdown("**C (corrente) fora da regra de gênero** — ouro, mas sem TABLIN 09/11.")
         if isinstance(c_sem, pd.DataFrame) and len(c_sem):
             st.dataframe(c_sem, use_container_width=True, hide_index=True)
         else:
             st.caption("Nenhum item C sem gênero (ou ainda não carregou a base).")
+
+        st.divider()
+        st.markdown("**BR classificados** — brincos já separados em trio/grande/demais conforme os códigos da API.")
+        if isinstance(br_ok, pd.DataFrame) and len(br_ok):
+            st.dataframe(br_ok, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Nenhum item BR classificado (ou ainda não carregou a base).")
 
         st.divider()
         st.markdown("**BR sem marcação TRIO/GRANDE** — esses itens entram como BR_DEMAIS (fallback).")
