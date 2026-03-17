@@ -40,14 +40,8 @@ def check_login() -> bool:
     senha = st.text_input("Senha", type="password", key="login_pass")
 
     if st.button("Entrar", key="login_button"):
-        user_ok = hmac.compare_digest(
-            str(usuario),
-            str(st.secrets["app_auth"]["user"])
-        )
-        pass_ok = hmac.compare_digest(
-            str(senha),
-            str(st.secrets["app_auth"]["password"])
-        )
+        user_ok = hmac.compare_digest(str(usuario), str(st.secrets["app_auth"]["user"]))
+        pass_ok = hmac.compare_digest(str(senha), str(st.secrets["app_auth"]["password"]))
 
         if user_ok and pass_ok:
             st.session_state["logged_in"] = True
@@ -1480,23 +1474,20 @@ def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kit
 # =============================
 with st.sidebar:
     st.header("Fonte de dados")
+
     if st.button("Sair", key="logout_button"):
         st.session_state["logged_in"] = False
         st.rerun()
-
 
     # Sempre usar API
     st.session_state["use_api"] = True
 
     if st.session_state["use_api"]:
         st.subheader("Conexão API")
-
         st.session_state["api_url"] = st.secrets["api"]["url"]
         st.session_state["api_user"] = st.secrets["api"]["user"]
         st.session_state["api_pass"] = st.secrets["api"]["password"]
         st.session_state["api_table"] = "CADMAT"
-
-        st.caption("Conexão protegida via st.secrets.")
 
         st.session_state["lista_grupos"] = ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]
         st.session_state["only_stock_gt0"] = True
@@ -1504,6 +1495,7 @@ with st.sidebar:
 
         st.markdown("**Classificação (C gênero / BR tipo)**")
         st.caption("Usado para separar C Feminino/Masculino e BR Trio/Grande/Demais.")
+        st.caption("Conexão protegida via st.secrets.")
 
         if st.button("Atualizar agora (limpar cache API)"):
             fetch_lookup_table.clear()
