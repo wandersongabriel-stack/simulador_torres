@@ -132,7 +132,7 @@ html, body, [class*="css"]  { color: var(--text); }
 footer {visibility: hidden;}
 [data-testid="stDecoration"] {display: none;}
 
-.block-container { padding-top: 0.85rem; padding-bottom: 2rem; }
+.block-container { padding-top: 3.2rem; padding-bottom: 2rem; }
 
 section[data-testid="stSidebar"]{
   background: linear-gradient(180deg, #0b1220 0%, #070a0f 100%);
