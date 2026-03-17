@@ -20,47 +20,12 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import requests
-import hmac
 
 
 # =============================
 # CONFIG GERAL
 # =============================
 st.set_page_config(page_title="Painel de Torres", layout="wide")
-
-def check_login():
-    if st.session_state.get("logged_in", False):
-        return True
-
-    st.title("Login")
-    st.caption("Entre para acessar o simulador.")
-
-    usuario = st.text_input("Usuário", key="login_user")
-    senha = st.text_input("Senha", type="password", key="login_pass")
-
-    if st.button("Entrar", type="primary"):
-        user_ok = hmac.compare_digest(
-            str(usuario),
-            str(st.secrets["app_auth"]["user"])
-        )
-        pass_ok = hmac.compare_digest(
-            str(senha),
-            str(st.secrets["app_auth"]["password"])
-        )
-
-        if user_ok and pass_ok:
-            st.session_state["logged_in"] = True
-            st.session_state.pop("login_pass", None)
-            st.rerun()
-        else:
-            st.error("Usuário ou senha inválidos.")
-
-    st.stop()
-
-
-if not check_login():
-    st.stop()
-
 
 TARGET_MIN_DEFAULT = 10000
 TARGET_MAX_DEFAULT = 10090
@@ -111,9 +76,6 @@ random.seed(SEED)
 np.random.seed(SEED)
 
 # Base default no repo
-DEFAULT_BASE_PATH = "base_ativa.xlsx"
-DEFAULT_CAT_PATH = r"C:\Sistema torres\categoria_produto.xlsx"
-DEFAULT_GEN_PATH = r"C:\Sistema torres\genero_produto.xlsx"
 DEFAULT_API_URL = "http://177.39.19.116/WebAPIFeniciaOCA/table/List2"
 DEFAULT_API_TABLE = "SELECT grupo, referencia, qtdreal, prc_venda FROM CADMAT"
 
@@ -392,8 +354,10 @@ def load_classificacao_from_bytes(cat_bytes: bytes, gen_bytes: bytes) -> pd.Data
     df_cat["is_trio"] = base.eq("TRIO") | modelo.str.contains("TRIO", na=False)
     df_cat["is_grande"] = modelo.str.contains("GRANDE", na=False)
 
+    # marca que o código existe na categoria_produto
     df_cat["tem_cadastro_cat"] = True
 
+    # regra do banho
     if "banho" in df_cat.columns:
         banho_raw = df_cat["banho"]
 
@@ -559,16 +523,6 @@ def fetch_cadmat_paginado(
             pages += 1
 
     return pd.DataFrame(all_rows)
-
-@st.cache_data(show_spinner=False, ttl=300)
-def fetch_cadmat_api(base_url: str, usuario: str, senha: str, tabela_header: str) -> pd.DataFrame:
-    """Busca CADMAT via API (JSON) e retorna DataFrame."""
-    headers = {"Usuario": usuario, "Senha": senha, "Tabela": tabela_header}
-    r = requests.get(base_url, headers=headers, timeout=90)
-    r.raise_for_status()
-    data = r.json()
-    rows = data.get("table", [])
-    return pd.DataFrame(rows)
 
 @st.cache_data(show_spinner=False, ttl=300)
 def fetch_cadmat_full_bruto(
@@ -748,18 +702,6 @@ def load_base_from_bytes(xlsx_bytes: bytes) -> pd.DataFrame:
     df = pd.read_excel(io.BytesIO(xlsx_bytes))
     return preparar_base_from_df(df)
 
-@st.cache_data(show_spinner=False)
-def load_default_base_from_repo() -> tuple[pd.DataFrame, str, bytes]:
-    if not os.path.exists(DEFAULT_BASE_PATH):
-        raise FileNotFoundError(
-            f"Não encontrei '{DEFAULT_BASE_PATH}' no repositório.\n"
-            f"Coloque esse arquivo na raiz do repo."
-        )
-    with open(DEFAULT_BASE_PATH, "rb") as f:
-        b = f.read()
-    base = load_base_from_bytes(b)
-    return base, DEFAULT_BASE_PATH, b
-
 def df_to_excel_bytes(sheets: dict) -> bytes:
     bio = io.BytesIO()
     with pd.ExcelWriter(bio, engine="openpyxl") as writer:
@@ -771,9 +713,9 @@ def df_to_excel_bytes(sheets: dict) -> bytes:
 def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
     # 1) Fonte API (CADMAT)
     if st.session_state.get("use_api", False):
-        api_url = st.secrets["api"]["url"]
-        api_user = st.secrets["api"]["user"]
-        api_pass = st.secrets["api"]["password"]
+        api_url = st.session_state.get("api_url", DEFAULT_API_URL)
+        api_user = st.session_state.get("api_user", "WEBSERVICE")
+        api_pass = st.session_state.get("api_pass", "1")
         api_table = st.session_state.get("api_table", DEFAULT_API_TABLE)
 
         try:
@@ -818,9 +760,6 @@ def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
         base = load_base_from_bytes(b)
         name = st.session_state.get("base_name", "upload_admin.xlsx")
         return base, name, b
-
-    # 3) Fonte Excel (arquivo padrão no repo)
-    return load_default_base_from_repo()
 
 
 # =============================
@@ -1485,14 +1424,9 @@ with st.sidebar:
 
     if st.session_state["use_api"]:
         st.subheader("Conexão API")
-        st.caption("A conexão com a API está protegida e configurada via secrets.")
-        st.code(st.secrets["api"]["url"], language=None)
-
-        st.session_state["api_table"] = st.text_input(
-            "Tabela/SELECT (opcional)",
-            value=st.session_state.get("api_table", "CADMAT"),
-            help="No modo paginado, este campo é ignorado. Use os grupos e opções de paginação abaixo."
-        )
+        st.session_state["api_url"] = st.text_input("Base URL", value=st.session_state.get("api_url", DEFAULT_API_URL))
+        st.session_state["api_user"] = st.text_input("Usuário", value=st.session_state.get("api_user", "WEBSERVICE"))
+        st.session_state["api_pass"] = st.text_input("Senha", value=st.session_state.get("api_pass", "1"), type="password")
 
         st.session_state["lista_grupos"] = ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]
         st.session_state["only_stock_gt0"] = True
@@ -1504,13 +1438,9 @@ with st.sidebar:
         if st.button("Atualizar agora (limpar cache API)"):
             fetch_lookup_table.clear()
             fetch_cadmat_paginado.clear()
+            load_classificacao_from_bytes.clear()
             st.session_state.pop("api_diag", None)
             st.info("Cache da API limpo. A base será recarregada na próxima atualização.")
-
-        if st.button("Sair"):
-            for k in ["logged_in", "login_user", "login_pass"]:
-                st.session_state.pop(k, None)
-            st.rerun()
 
         st.divider()
 
@@ -1553,16 +1483,6 @@ with st.sidebar:
     st.divider()
     st.header("Geração de kits")
     max_kits = st.number_input("Gerar até (máx kits)", min_value=1, max_value=500, value=DEFAULT_MAX_KITS, step=10)
-
-    if not st.session_state.get("use_api", False):
-        st.divider()
-        st.header("Atualizar base (admin)")
-        up = st.file_uploader("Enviar nova base (xlsx)", type=["xlsx"], key="admin_upload")
-        if up is not None:
-            st.session_state["base_bytes"] = up.getvalue()
-            st.session_state["base_name"] = up.name
-            st.success("Base carregada para esta sessão.")
-            st.info("Para persistir permanentemente, substitua o arquivo 'base_ativa.xlsx' no repositório.")
 
 
 # =============================
