@@ -113,7 +113,6 @@ np.random.seed(SEED)
 
 # Base default no repo
 DEFAULT_API_URL = "http://177.39.19.116/WebAPIFeniciaOCA/table/List2"
-DEFAULT_API_TABLE = "SELECT grupo, referencia, qtdreal, prc_venda FROM CADMAT"
 
 
 # =============================
@@ -559,55 +558,6 @@ def fetch_cadmat_paginado(
 
     return pd.DataFrame(all_rows)
 
-@st.cache_data(show_spinner=False, ttl=300)
-def fetch_cadmat_full_bruto(
-    base_url: str,
-    usuario: str,
-    senha: str,
-    timeout: int = 90,
-) -> pd.DataFrame:
-    """
-    Baixa a CADMAT bruta igual ao teste.py:
-    - pagina por referencia > last_ref
-    - sem merge com categoria/genero
-    - sem filtros de banho
-    - sem classificação do app
-    """
-    cols = (
-        "grupo,referencia,descricao,caracter,qtdreal,pu_mat,prc_venda,"
-        "unid_emb,qtd_emb,unid_mat,prc_venda2,prc_venda3,peso_unit,marca,"
-        "prc_venda4,barra,val_larg,val_comp,barra_emb,ncm"
-    )
-
-    all_rows = []
-    last_ref = ""
-
-    while True:
-        sql = f"SELECT {cols} FROM CADMAT WHERE referencia > '{last_ref}' ORDER BY referencia"
-        rows = _api_get_table(base_url, usuario, senha, sql, timeout=timeout)
-
-        if not rows:
-            break
-
-        all_rows.extend(rows)
-
-        last_ref_new = str(rows[-1].get("referencia", "")).strip()
-        if not last_ref_new or last_ref_new == last_ref:
-            break
-
-        last_ref = last_ref_new
-        time.sleep(0.10)
-
-    return pd.DataFrame(all_rows)
-
-
-def df_single_excel_bytes(df: pd.DataFrame, sheet_name: str) -> bytes:
-    bio = io.BytesIO()
-    with pd.ExcelWriter(bio, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
-    bio.seek(0)
-    return bio.getvalue()
-
 def build_raw_base_from_api(
     cadmat_df: pd.DataFrame,
     tabcol_df: pd.DataFrame | None = None,
@@ -726,12 +676,6 @@ def build_raw_base_from_api(
 
     return df_raw, diag
 
-def bytes_from_local_file(path: str) -> bytes:
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Não encontrei o arquivo '{path}'.")
-    with open(path, "rb") as f:
-        return f.read()
-
 @st.cache_data(show_spinner=False)
 def load_base_from_bytes(xlsx_bytes: bytes) -> pd.DataFrame:
     df = pd.read_excel(io.BytesIO(xlsx_bytes))
@@ -751,7 +695,7 @@ def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
         api_url = st.secrets["api"]["url"]
         api_user = st.secrets["api"]["user"]
         api_pass = st.secrets["api"]["password"]
-        api_table = st.session_state.get("api_table", DEFAULT_API_TABLE)
+        api_table = "CADMAT"
 
         try:
             tabcol = fetch_lookup_table(api_url, api_user, api_pass, "TABCOL")
@@ -787,15 +731,7 @@ def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
 
         b = df_to_excel_bytes({"base_api": df_raw})
         base = load_base_from_bytes(b)
-        return base, f"API CADMAT ({api_table[:35]}...)", b
-
-    # 2) Fonte Excel (upload admin em sessão)
-    if "base_bytes" in st.session_state and st.session_state["base_bytes"]:
-        b = st.session_state["base_bytes"]
-        base = load_base_from_bytes(b)
-        name = st.session_state.get("base_name", "upload_admin.xlsx")
-        return base, name, b
-
+        return base, "API CADMAT", b
 
 # =============================
 # CAPACIDADE TEÓRICA (diagnóstico)
