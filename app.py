@@ -1601,14 +1601,15 @@ gargalo = compute_failure_gargalos(base_bytes, float(target_min), float(target_m
 kits_real = compute_real_kits_count(base_bytes, float(target_min), float(target_max), int(max_kits))
 
 c1, c2 = st.columns([2.6, 1.0])
+
+
 with c1:
     st.markdown(
         f"""
         <div class="topbar">
           <div class="topbar-title">PAINEL DE TORRES</div>
           <div class="topbar-sub">
-            Base ativa: <b>{base_name}</b>
-            &nbsp;|&nbsp; Faixa: <b>{fmt_brl(float(target_min))}</b> a <b>{fmt_brl(float(target_max))}</b>
+            Faixa: <b>{fmt_brl(float(target_min))}</b> a <b>{fmt_brl(float(target_max))}</b>
             &nbsp;|&nbsp; Gargalo(s): <b>{gargalo}</b>
             &nbsp;|&nbsp; Teórico (estoque): <b>{kits_teorico}</b>
           </div>
