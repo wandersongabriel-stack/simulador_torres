@@ -138,9 +138,9 @@ st.markdown(
     html, body, [class*="css"]  { color: var(--text); }
 
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
     footer {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden; height: 0px;}
+    header {visibility: visible;}
+    [data-testid="stToolbar"] {visibility: visible; height: auto;}
     [data-testid="stDecoration"] {display: none;}
 
     .block-container { padding-top: 0.85rem; padding-bottom: 2rem; }
