@@ -143,7 +143,7 @@ st.markdown(
     [data-testid="stToolbar"] {visibility: visible; height: auto;}
     [data-testid="stDecoration"] {display: none;}
 
-    .block-container { padding-top: 0.85rem; padding-bottom: 2rem; }
+    .block-container { padding-top: 4.5rem; padding-bottom: 2rem; }
 
     section[data-testid="stSidebar"]{
       background: linear-gradient(180deg, #0b1220 0%, #070a0f 100%);
