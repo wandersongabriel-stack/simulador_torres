@@ -1055,6 +1055,12 @@ def pick_best_fit(cat, used, stock, pools, price, current_total, tmin, tmax):
     if max_add <= 0:
         return None
 
+def cat_of_from_pools(sku, pools):
+    for cat, itens in pools.items():
+        if sku in itens:
+            return cat
+    return None
+
     gap = tmin - current_total
     cands = [
         s for s in pools[cat]
@@ -1476,6 +1482,30 @@ def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kit
     reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits)
     return int(reports.get("qtd_kits", 0))
 
+@st.cache_data(show_spinner=False)
+def compute_failure_gargalos(base_bytes: bytes, tmin: float, tmax: float, max_kits: int) -> str:
+    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits)
+    falha_df = reports.get("falha_proximo_kit", pd.DataFrame())
+
+    if falha_df is None or falha_df.empty:
+        return "-"
+
+    df = falha_df.copy()
+
+    # pega só as linhas reais de categoria que falharam
+    df = df[
+        (df["tipo"] == "minimos_viabilidade") &
+        (df["status"] == "FALTA_SKU")
+    ].copy()
+
+    if df.empty:
+        return "-"
+
+    nomes = []
+    for cat in df["categoria"].astype(str).tolist():
+        nomes.append(DISPLAY_NAME.get(cat, cat))
+
+    return ", ".join(nomes)
 
 # =============================
 # UI - Sidebar
@@ -1561,7 +1591,8 @@ except Exception as e:
     st.error(str(e))
     st.stop()
 
-kits_teorico, gargalo, _ = kits_possible_overall_correct(base_df)
+kits_teorico, gargalo_teorico, _ = kits_possible_overall_correct(base_df)
+gargalo = compute_failure_gargalos(base_bytes, float(target_min), float(target_max), int(max_kits))
 kits_real = compute_real_kits_count(base_bytes, float(target_min), float(target_max), int(max_kits))
 
 c1, c2 = st.columns([2.6, 1.0])
