@@ -1256,19 +1256,37 @@ def try_build_one_with_reason(stock, pools, price, tmin, tmax):
     counts = defaultdict(int)
     total = 0.0
 
+    falhas_minimos = []
+    detalhes_ok = []
+
+    # 1) Verifica TODOS os mínimos, sem parar no primeiro
     for cat, (mn, mx) in RULES.items():
-        pick = pick_k_skus(cat, mn, used, stock, pools)
-        if pick is None:
-            cands = [s for s in pools[cat] if stock.get(s, 0) > 0 and s not in used]
-            return None, f"Falhou nos mínimos: {cat} precisa {mn}, disponíveis {len(cands)}"
+        cands = [s for s in pools[cat] if stock.get(s, 0) > 0 and s not in used]
+        disp = len(cands)
+
+        if disp < mn:
+            falhas_minimos.append(f"{cat} precisa {mn}, disponíveis {disp}")
+            continue
+
+        pick = cands[:mn]
+        cat_sum = sum(float(price[s]) for s in pick)
+
         for s in pick:
             used.add(s)
             counts[cat] += 1
             total += float(price[s])
 
+        detalhes_ok.append((cat, mn, cat_sum))
+
+    # Se qualquer categoria falhou nos mínimos, retorna TODAS
+    if falhas_minimos:
+        return None, "Falhou nos mínimos: " + " | ".join(falhas_minimos)
+
+    # 2) Se os mínimos já estourarem o teto, informa isso
     if total > tmax:
         return None, f"Mínimos estouram teto: total_minimos={total:.2f} > {tmax}"
 
+    # 3) Tenta completar até o piso
     cats_order = ["BR_DEMAIS", "CO"] + [c for c in RULES.keys() if c not in ("BR_DEMAIS", "CO")]
     step = 0
     while total < tmin and step < 1200:
@@ -1281,10 +1299,14 @@ def try_build_one_with_reason(stock, pools, price, tmin, tmax):
             if s is not None:
                 chosen = s
                 break
+
         if chosen is None:
             return None, f"Não conseguiu completar: total={total:.2f}, falta={tmin-total:.2f}, nenhum item cabe até {tmax}"
+
         used.add(chosen)
+        counts[cat_of_from_pools(chosen, pools)] += 1
         total += float(price[chosen])
+
         if total > tmax:
             return None, f"Estourou teto ao completar: total={total:.2f} > {tmax}"
 
@@ -1292,6 +1314,12 @@ def try_build_one_with_reason(stock, pools, price, tmin, tmax):
         return None, f"Terminou fora da faixa: total={total:.2f}"
 
     return {"total": total, "counts": dict(counts), "skus": list(used)}, "OK"
+
+def cat_of_from_pools(sku, pools):
+    for cat, itens in pools.items():
+        if sku in itens:
+            return cat
+    return None
 
 def diagnose_next_kit(stock, pools, price):
     rows = []
