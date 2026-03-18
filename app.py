@@ -1055,6 +1055,12 @@ def pick_best_fit(cat, used, stock, pools, price, current_total, tmin, tmax):
     if max_add <= 0:
         return None
 
+def cat_of_from_pools(sku, pools):
+    for cat, itens in pools.items():
+        if sku in itens:
+            return cat
+    return None
+
     gap = tmin - current_total
     cands = [
         s for s in pools[cat]
@@ -1256,19 +1262,37 @@ def try_build_one_with_reason(stock, pools, price, tmin, tmax):
     counts = defaultdict(int)
     total = 0.0
 
+    falhas_minimos = []
+    detalhes_ok = []
+
+    # 1) Verifica TODOS os mínimos, sem parar no primeiro
     for cat, (mn, mx) in RULES.items():
-        pick = pick_k_skus(cat, mn, used, stock, pools)
-        if pick is None:
-            cands = [s for s in pools[cat] if stock.get(s, 0) > 0 and s not in used]
-            return None, f"Falhou nos mínimos: {cat} precisa {mn}, disponíveis {len(cands)}"
+        cands = [s for s in pools[cat] if stock.get(s, 0) > 0 and s not in used]
+        disp = len(cands)
+
+        if disp < mn:
+            falhas_minimos.append(f"{cat} precisa {mn}, disponíveis {disp}")
+            continue
+
+        pick = cands[:mn]
+        cat_sum = sum(float(price[s]) for s in pick)
+
         for s in pick:
             used.add(s)
             counts[cat] += 1
             total += float(price[s])
 
+        detalhes_ok.append((cat, mn, cat_sum))
+
+    # Se qualquer categoria falhou nos mínimos, retorna TODAS
+    if falhas_minimos:
+        return None, "Falhou nos mínimos: " + " | ".join(falhas_minimos)
+
+    # 2) Se os mínimos já estourarem o teto, informa isso
     if total > tmax:
         return None, f"Mínimos estouram teto: total_minimos={total:.2f} > {tmax}"
 
+    # 3) Tenta completar até o piso
     cats_order = ["BR_DEMAIS", "CO"] + [c for c in RULES.keys() if c not in ("BR_DEMAIS", "CO")]
     step = 0
     while total < tmin and step < 1200:
@@ -1281,10 +1305,14 @@ def try_build_one_with_reason(stock, pools, price, tmin, tmax):
             if s is not None:
                 chosen = s
                 break
+
         if chosen is None:
             return None, f"Não conseguiu completar: total={total:.2f}, falta={tmin-total:.2f}, nenhum item cabe até {tmax}"
+
         used.add(chosen)
+        counts[cat_of_from_pools(chosen, pools)] += 1
         total += float(price[chosen])
+
         if total > tmax:
             return None, f"Estourou teto ao completar: total={total:.2f} > {tmax}"
 
@@ -1292,6 +1320,12 @@ def try_build_one_with_reason(stock, pools, price, tmin, tmax):
         return None, f"Terminou fora da faixa: total={total:.2f}"
 
     return {"total": total, "counts": dict(counts), "skus": list(used)}, "OK"
+
+def cat_of_from_pools(sku, pools):
+    for cat, itens in pools.items():
+        if sku in itens:
+            return cat
+    return None
 
 def diagnose_next_kit(stock, pools, price):
     rows = []
@@ -1448,6 +1482,30 @@ def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kit
     reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits)
     return int(reports.get("qtd_kits", 0))
 
+@st.cache_data(show_spinner=False)
+def compute_failure_gargalos(base_bytes: bytes, tmin: float, tmax: float, max_kits: int) -> str:
+    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits)
+    falha_df = reports.get("falha_proximo_kit", pd.DataFrame())
+
+    if falha_df is None or falha_df.empty:
+        return "-"
+
+    df = falha_df.copy()
+
+    # pega só as linhas reais de categoria que falharam
+    df = df[
+        (df["tipo"] == "minimos_viabilidade") &
+        (df["status"] == "FALTA_SKU")
+    ].copy()
+
+    if df.empty:
+        return "-"
+
+    nomes = []
+    for cat in df["categoria"].astype(str).tolist():
+        nomes.append(DISPLAY_NAME.get(cat, cat))
+
+    return ", ".join(nomes)
 
 # =============================
 # UI - Sidebar
@@ -1533,7 +1591,8 @@ except Exception as e:
     st.error(str(e))
     st.stop()
 
-kits_teorico, gargalo, _ = kits_possible_overall_correct(base_df)
+kits_teorico, gargalo_teorico, _ = kits_possible_overall_correct(base_df)
+gargalo = compute_failure_gargalos(base_bytes, float(target_min), float(target_max), int(max_kits))
 kits_real = compute_real_kits_count(base_bytes, float(target_min), float(target_max), int(max_kits))
 
 c1, c2 = st.columns([2.6, 1.0])
