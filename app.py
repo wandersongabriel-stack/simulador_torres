@@ -1055,12 +1055,6 @@ def pick_best_fit(cat, used, stock, pools, price, current_total, tmin, tmax):
     if max_add <= 0:
         return None
 
-def cat_of_from_pools(sku, pools):
-    for cat, itens in pools.items():
-        if sku in itens:
-            return cat
-    return None
-
     gap = tmin - current_total
     cands = [
         s for s in pools[cat]
@@ -1068,6 +1062,17 @@ def cat_of_from_pools(sku, pools):
     ]
     if not cands:
         return None
+
+    if gap > 0:
+        return min(cands, key=lambda s: abs(float(price[s]) - gap))
+    return min(cands, key=lambda s: objective(current_total + float(price[s]), tmin, tmax))
+
+
+def cat_of_from_pools(sku, pools):
+    for cat, itens in pools.items():
+        if sku in itens:
+            return cat
+    return None
 
     if gap > 0:
         return min(cands, key=lambda s: abs(float(price[s]) - gap))
@@ -1693,6 +1698,7 @@ with tab1:
                 del st.session_state["last_gen"]
             generate_kits_reports.clear()
             compute_real_kits_count.clear()
+            compute_failure_gargalos.clear()
             st.info("Cache limpo (kits + métrica do topo).")
 
     with right:
