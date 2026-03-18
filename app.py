@@ -83,7 +83,7 @@ RULES = {
 }
 
 PREFIX_DIRECT = ["CJ", "CK", "CO", "ES", "PF", "SEM", "PM", "PR"]
-ADJUST_CATS = {"BR_DEMAIS", "CO"}  # categorias usadas como "ajuste fino"
+ADJUST_CATS = {"BR_DEMAIS", "CO"} 
 
 DISPLAY_NAME = {
     "CJ": "CJ",
@@ -405,7 +405,6 @@ def load_classificacao_from_bytes(cat_bytes: bytes, gen_bytes: bytes) -> pd.Data
 
         df_cat["banho_valido"] = tem_banho & (~banho_e_rodio) & (~banho_nao_definido)
     else:
-        # se a coluna não existir, considera inválido para não deixar passar sem controle
         df_cat["banho_valido"] = False
 
     # se houver múltiplas linhas por código, consolida:
@@ -1497,7 +1496,6 @@ def compute_failure_gargalos(base_bytes: bytes, tmin: float, tmax: float, max_ki
 
     df = falha_df.copy()
 
-    # pega só as linhas reais de categoria que falharam
     df = df[
         (df["tipo"] == "minimos_viabilidade") &
         (df["status"] == "FALTA_SKU")
