@@ -419,6 +419,7 @@ def fetch_lookup_table(base_url: str, usuario: str, senha: str, table_name: str)
     df["nome"] = df["nome"].astype(str).str.strip().str.upper()
     return df[["codigo", "nome"]].drop_duplicates().copy()
 
+@st.cache_data(show_spinner=False, ttl=300)
 def fetch_cadmat_paginado(
     base_url: str,
     usuario: str,
