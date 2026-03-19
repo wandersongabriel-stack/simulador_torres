@@ -360,66 +360,6 @@ def parse_pt_decimal(x) -> float:
     except Exception:
         return np.nan
 
-@st.cache_data(show_spinner=False)
-def load_classificacao_from_bytes(cat_bytes: bytes, gen_bytes: bytes) -> pd.DataFrame:
-    """
-    Consolida as duas planilhas em um lookup por 'codigo'.
-
-    Regras novas:
-    - BR com banho vazio/nulo é inválido
-    - BR com banho contendo 'Ródio' ou 'Rodio' é inválido
-    - BR com banho 'Não definido' / 'Nao definido' é inválido
-    - a invalidação não depende da API deixar de trazer o item;
-      ela só serve para barrar o item na base tratada após o merge.
-    """
-    df_cat = pd.read_excel(io.BytesIO(cat_bytes)).copy()
-    df_gen = pd.read_excel(io.BytesIO(gen_bytes)).copy()
-
-    for d in (df_cat, df_gen):
-        if "codigo" not in d.columns:
-            raise ValueError("Planilhas de classificação precisam ter a coluna 'codigo'.")
-        d["codigo"] = d["codigo"].apply(norm_codigo)
-
-    # =============================
-    # categoria_produto: trio / grande / validação de banho
-    # =============================
-    base = df_cat.get("base", pd.Series([""] * len(df_cat))).astype(str).str.strip().str.upper()
-    modelo = df_cat.get("modelo", pd.Series([""] * len(df_cat))).astype(str).str.strip().str.upper()
-
-    df_cat["is_trio"] = base.eq("TRIO") | modelo.str.contains("TRIO", na=False)
-    df_cat["is_grande"] = modelo.str.contains("GRANDE", na=False)
-
-    # marca que o código existe na categoria_produto
-    df_cat["tem_cadastro_cat"] = True
-
-    # regra do banho
-    if "banho" in df_cat.columns:
-        banho_raw = df_cat["banho"]
-
-        banho_txt = banho_raw.fillna("").astype(str).str.strip().str.lower()
-
-        tem_banho = banho_txt.ne("")
-        banho_e_rodio = banho_txt.str.contains(r"rodio|ródio", case=False, regex=True, na=False)
-        banho_nao_definido = banho_txt.str.contains(r"nao definido|não definido", case=False, regex=True, na=False)
-
-        df_cat["banho_valido"] = tem_banho & (~banho_e_rodio) & (~banho_nao_definido)
-    else:
-        df_cat["banho_valido"] = False
-
-    # se houver múltiplas linhas por código, consolida:
-    # - trio/grande: se alguma linha marcar, mantém True
-    # - tem_cadastro_cat: True
-    # - banho_valido: se alguma linha for válida, considera válido
-    df_cat_lookup = (
-        df_cat.groupby("codigo", as_index=False)
-        .agg(
-            is_trio=("is_trio", "max"),
-            is_grande=("is_grande", "max"),
-            tem_cadastro_cat=("tem_cadastro_cat", "max"),
-            banho_valido=("banho_valido", "max"),
-        )
-    )
-
     # =============================
     # genero_produto: feminino / masculino
     # =============================
