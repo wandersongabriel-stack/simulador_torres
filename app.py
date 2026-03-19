@@ -360,35 +360,7 @@ def parse_pt_decimal(x) -> float:
     except Exception:
         return np.nan
 
-    # =============================
-    # genero_produto: feminino / masculino
-    # =============================
-    genero = df_gen.get("genero", pd.Series([""] * len(df_gen))).astype(str).str.strip().str.upper()
-
-    df_gen["is_fem"] = genero.eq("MULHER") | genero.eq("FEM") | genero.eq("FEMININO")
-    df_gen["is_masc"] = genero.eq("HOMEM") | genero.eq("MASC") | genero.eq("MASCULINO")
-
-    df_gen_lookup = (
-        df_gen[["codigo", "is_fem", "is_masc"]]
-        .drop_duplicates("codigo")
-        .copy()
-    )
-
-    cls = (
-        df_cat_lookup
-        .merge(df_gen_lookup, on="codigo", how="outer")
-        .fillna({
-            "is_trio": False,
-            "is_grande": False,
-            "tem_cadastro_cat": False,
-            "banho_valido": False,
-            "is_fem": False,
-            "is_masc": False,
-        })
-    )
-
-    return cls
-
+    
 def _api_get_table(
     base_url: str,
     usuario: str,
