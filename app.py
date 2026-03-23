@@ -4,7 +4,6 @@
 # - Card do topo = RESULTADO REAL (algoritmo)
 # - Simulador de compra + nova coluna "Modelos (SKUs) a comprar" (ceil(faltante / N))
 # - Tooltips nas colunas (hover) via column_config
-# - Admin: pode subir base (na sessão); demais usuários não
 # - Botão "Gerar kits agora" + cache (não recomputa toda hora)
 # - Abas: simulador + relatórios (kits_resumo, kits_itens, estoque_restante, falha_proximo_kit)
 # =============================
