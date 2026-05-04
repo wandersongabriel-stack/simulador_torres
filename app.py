@@ -72,7 +72,6 @@ RULES = {
     "ES": (2, 3),
     "PF": (10, 15),
     "PR": (2, 3),
-    "SEM": (1, 2),
     "PM": (2, 4),
     "C_FEMININO": (10, 15),
     "C_MASCULINO": (2, 4),
@@ -81,7 +80,7 @@ RULES = {
     "BR_DEMAIS": (60, None),
 }
 
-PREFIX_DIRECT = ["CJ", "CK", "CO", "ES", "PF", "SEM", "PM", "PR"]
+PREFIX_DIRECT = ["CJ", "CK", "CO", "ES", "PF", "PM", "PR"]
 ADJUST_CATS = {"BR_DEMAIS", "CO"} 
 
 DISPLAY_NAME = {
@@ -91,7 +90,6 @@ DISPLAY_NAME = {
     "ES": "ES",
     "PF": "PF",
     "PR": "PR",
-    "SEM": "SEM",
     "PM": "PM",
     "C_FEMININO": "C - FEMININO",
     "C_MASCULINO": "C - MASCULINO",
@@ -631,7 +629,7 @@ def get_active_base() -> tuple[pd.DataFrame, str, bytes]:
             api_url,
             api_user,
             api_pass,
-            grupos=st.session_state.get("lista_grupos", ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]),
+            grupos=st.session_state.get("lista_grupos", ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "PM"]),
             colunas=["grupo", "referencia", "descricao", "caracter", "qtdreal", "prc_venda", "gradecol", "gradelin", "gradegrp"],
             only_stock_gt0=st.session_state.get("only_stock_gt0", True),
             max_pages_per_group=int(st.session_state.get("max_pages_per_group", 5000)),
@@ -1372,7 +1370,7 @@ with st.sidebar:
         st.caption("A conexão com a API está protegida e configurada via secrets.")
         st.code(st.secrets["api"]["url"], language=None)
 
-        st.session_state["lista_grupos"] = ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]
+        st.session_state["lista_grupos"] = ["BR", "C", "CJ", "CK", "CO", "ES", "PF", "PR", "PM"]
         st.session_state["only_stock_gt0"] = True
         st.session_state["max_pages_per_group"] = 5000
 
