@@ -158,9 +158,9 @@ def editor_df_to_rules(df: pd.DataFrame) -> dict:
         mn_raw = row.get("Mínimo por torre")
         mx_raw = row.get("Máximo por torre")
 
-        if pd.isna(mn_raw):
-            raise ValueError(f"{DISPLAY_NAME.get(cat, cat)}: informe um mínimo.")
-        mn = int(mn_raw)
+        # Se o usuário apagar o mínimo, o sistema assume 0.
+        # Isso evita erro visual na tela e permite desativar um grupo sem precisar digitar 0 manualmente.
+        mn = 0 if pd.isna(mn_raw) else int(mn_raw)
         mx = None if pd.isna(mx_raw) else int(mx_raw)
         out[cat] = (mn, mx)
 
@@ -1728,10 +1728,6 @@ with tab0:
             clear_kit_caches()
             st.rerun()
 
-    st.info(
-        "Exemplo: altere BR - GRANDE de 8 para 5. No próximo rerun, a quantidade de torres, "
-        "o gargalo e os relatórios passam a considerar essa nova regra."
-    )
 
 # =============================
 # TAB 1 - Simulador
