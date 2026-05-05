@@ -65,7 +65,7 @@ if not check_login():
 TARGET_MIN_DEFAULT = 10000
 TARGET_MAX_DEFAULT = 10090
 
-RULES = {
+DEFAULT_RULES = {
     "CJ": (22, 25),
     "CK": (8, 12),
     "CO": (20, 28),
@@ -79,6 +79,13 @@ RULES = {
     "BR_GRANDE": (8, 10),
     "BR_DEMAIS": (60, None),
 }
+
+# RULES começa com o padrão, mas pode ser sobrescrito pela aba "Configuração da torre".
+# Mantive esse nome porque o restante do algoritmo já usa RULES como fonte das regras ativas.
+RULES = DEFAULT_RULES.copy()
+RULES_CONFIG_KEY = "rules_config"
+RULES_EDITOR_KEY = "rules_editor"
+RULES_EDITOR_VERSION_KEY = "rules_editor_version"
 
 PREFIX_DIRECT = ["CJ", "CK", "CO", "ES", "PF", "PM", "PR"]
 ADJUST_CATS = {"BR_DEMAIS", "CO"} 
@@ -97,6 +104,94 @@ DISPLAY_NAME = {
     "BR_GRANDE": "BR - GRANDE",
     "BR_DEMAIS": "BR - OUTROS",
 }
+
+
+def normalize_rules_config(rules: dict | None) -> dict:
+    """Garante que todas as categorias existam e que mínimo/máximo estejam normalizados."""
+    src = rules or DEFAULT_RULES
+    normalized = {}
+    for cat, default_pair in DEFAULT_RULES.items():
+        mn, mx = src.get(cat, default_pair)
+        mn = int(mn)
+        mx = None if pd.isna(mx) else int(mx)
+        if mn < 0:
+            raise ValueError(f"{DISPLAY_NAME.get(cat, cat)}: o mínimo não pode ser negativo.")
+        if mx is not None and mx < mn:
+            raise ValueError(f"{DISPLAY_NAME.get(cat, cat)}: o máximo não pode ser menor que o mínimo.")
+        normalized[cat] = (mn, mx)
+    return normalized
+
+
+def get_active_rules() -> dict:
+    if RULES_CONFIG_KEY not in st.session_state:
+        st.session_state[RULES_CONFIG_KEY] = DEFAULT_RULES.copy()
+    return normalize_rules_config(st.session_state[RULES_CONFIG_KEY])
+
+
+def set_active_rules(rules: dict):
+    st.session_state[RULES_CONFIG_KEY] = normalize_rules_config(rules)
+
+
+def rules_to_editor_df(rules: dict) -> pd.DataFrame:
+    rows = []
+    for cat, (mn, mx) in rules.items():
+        rows.append({
+            "categoria": cat,
+            "Grupo": DISPLAY_NAME.get(cat, cat),
+            "Mínimo por torre": int(mn),
+            "Máximo por torre": None if mx is None else int(mx),
+        })
+    return pd.DataFrame(rows)
+
+
+def editor_df_to_rules(df: pd.DataFrame) -> dict:
+    if df is None or len(df) == 0:
+        raise ValueError("A configuração da torre está vazia.")
+
+    out = {}
+    df = pd.DataFrame(df).copy()
+    for _, row in df.iterrows():
+        cat = str(row.get("categoria", "")).strip()
+        if cat not in DEFAULT_RULES:
+            continue
+
+        mn_raw = row.get("Mínimo por torre")
+        mx_raw = row.get("Máximo por torre")
+
+        if pd.isna(mn_raw):
+            raise ValueError(f"{DISPLAY_NAME.get(cat, cat)}: informe um mínimo.")
+        mn = int(mn_raw)
+        mx = None if pd.isna(mx_raw) else int(mx_raw)
+        out[cat] = (mn, mx)
+
+    missing = [cat for cat in DEFAULT_RULES if cat not in out]
+    if missing:
+        raise ValueError("Categorias ausentes na configuração: " + ", ".join(missing))
+
+    return normalize_rules_config(out)
+
+
+def rules_signature(rules: dict) -> tuple:
+    """Assinatura estável usada para invalidar cache quando os parâmetros mudam."""
+    return tuple((cat, int(mn), None if mx is None else int(mx)) for cat, (mn, mx) in rules.items())
+
+
+def apply_rules_from_editor_state():
+    """Aplica automaticamente alterações feitas no data_editor antes de calcular os cards/abas."""
+    if RULES_EDITOR_KEY not in st.session_state:
+        return
+    try:
+        rules = editor_df_to_rules(st.session_state[RULES_EDITOR_KEY])
+        set_active_rules(rules)
+        st.session_state["rules_validation_error"] = ""
+    except Exception as e:
+        st.session_state["rules_validation_error"] = str(e)
+
+
+def clear_kit_caches():
+    generate_kits_reports.clear()
+    compute_real_kits_count.clear()
+    compute_failure_gargalos.clear()
 
 # Gerador
 DEFAULT_MAX_KITS = 200
@@ -1239,7 +1334,7 @@ def diagnose_next_kit(stock, pools, price):
 # CACHE DO GERADOR (relatórios)
 # =============================
 @st.cache_data(show_spinner=False)
-def generate_kits_reports(base_bytes: bytes, tmin: float, tmax: float, max_kits: int) -> dict:
+def generate_kits_reports(base_bytes: bytes, tmin: float, tmax: float, max_kits: int, rules_sig: tuple | None = None) -> dict:
     base = load_base_from_bytes(base_bytes)
     stock0, price, cat_of, pools = build_structures(base)
 
@@ -1328,13 +1423,13 @@ def generate_kits_reports(base_bytes: bytes, tmin: float, tmax: float, max_kits:
     }
 
 @st.cache_data(show_spinner=False)
-def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kits: int) -> int:
-    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits)
+def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kits: int, rules_sig: tuple | None = None) -> int:
+    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits, rules_sig)
     return int(reports.get("qtd_kits", 0))
 
 @st.cache_data(show_spinner=False)
-def compute_failure_gargalos(base_bytes: bytes, tmin: float, tmax: float, max_kits: int) -> str:
-    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits)
+def compute_failure_gargalos(base_bytes: bytes, tmin: float, tmax: float, max_kits: int, rules_sig: tuple | None = None) -> str:
+    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits, rules_sig)
     falha_df = reports.get("falha_proximo_kit", pd.DataFrame())
 
     if falha_df is None or falha_df.empty:
@@ -1431,6 +1526,17 @@ with st.sidebar:
     max_kits = st.number_input("Gerar até (máx kits)", min_value=1, max_value=500, value=DEFAULT_MAX_KITS, step=10)
 
 
+# Aplica as regras editadas antes dos cálculos principais.
+# Assim cards, simulador e geração de kits já usam a configuração atual da aba.
+_current_rules_editor_key = f"{RULES_EDITOR_KEY}_{st.session_state.get(RULES_EDITOR_VERSION_KEY, 0)}"
+if _current_rules_editor_key in st.session_state:
+    st.session_state[RULES_EDITOR_KEY] = st.session_state[_current_rules_editor_key]
+apply_rules_from_editor_state()
+active_rules = get_active_rules()
+RULES.clear()
+RULES.update(active_rules)
+current_rules_sig = rules_signature(active_rules)
+
 # =============================
 # MAIN
 # =============================
@@ -1441,8 +1547,8 @@ except Exception as e:
     st.stop()
 
 kits_teorico, gargalo_teorico, _ = kits_possible_overall_correct(base_df)
-gargalo = compute_failure_gargalos(base_bytes, float(target_min), float(target_max), int(max_kits))
-kits_real = compute_real_kits_count(base_bytes, float(target_min), float(target_max), int(max_kits))
+gargalo = compute_failure_gargalos(base_bytes, float(target_min), float(target_max), int(max_kits), current_rules_sig)
+kits_real = compute_real_kits_count(base_bytes, float(target_min), float(target_max), int(max_kits), current_rules_sig)
 
 c1, c2 = st.columns([2.6, 1.0])
 
@@ -1493,7 +1599,8 @@ if st.session_state.get("use_api", False):
         else:
             st.caption("Nenhum item bloqueado por cadastro/banho inválido.")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Configuração da torre",
     "Simulador de compra",
     "Kits resumo",
     "Kits itens",
@@ -1501,6 +1608,75 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Falha próximo kit"
 ])
 
+
+# =============================
+# TAB 0 - Configuração da torre
+# =============================
+with tab0:
+    st.subheader("Configuração da torre")
+    st.markdown(
+        "Edite os mínimos e máximos por grupo para testar cenários. "
+        "As alterações são aplicadas automaticamente nos cards, no simulador e na geração de kits."
+    )
+
+    validation_error = st.session_state.get("rules_validation_error", "")
+    if validation_error:
+        st.error(validation_error)
+
+    col_cfg_a, col_cfg_b = st.columns([3, 1])
+    with col_cfg_a:
+        editor_key_version = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0)
+        editor_key = f"{RULES_EDITOR_KEY}_{editor_key_version}"
+
+        # Espelha a chave versionada para a chave fixa usada no pré-processamento do rerun.
+        if editor_key in st.session_state:
+            st.session_state[RULES_EDITOR_KEY] = st.session_state[editor_key]
+
+        edited_rules_df = st.data_editor(
+            rules_to_editor_df(get_active_rules()),
+            key=editor_key,
+            use_container_width=True,
+            hide_index=True,
+            disabled=["categoria", "Grupo"],
+            column_config={
+                "categoria": st.column_config.TextColumn("Código", help="Código interno usado pelo algoritmo."),
+                "Grupo": st.column_config.TextColumn("Grupo", help="Nome exibido para o usuário."),
+                "Mínimo por torre": st.column_config.NumberColumn(
+                    "Mínimo por torre",
+                    min_value=0,
+                    step=1,
+                    help="Quantidade mínima obrigatória desse grupo em cada torre."
+                ),
+                "Máximo por torre": st.column_config.NumberColumn(
+                    "Máximo por torre",
+                    min_value=0,
+                    step=1,
+                    help="Quantidade máxima permitida. Deixe vazio para não ter limite máximo."
+                ),
+            },
+        )
+        st.session_state[RULES_EDITOR_KEY] = edited_rules_df
+
+    with col_cfg_b:
+        st.metric("Torres com a regra atual", kits_real)
+        st.caption(f"Gargalo(s): {gargalo}")
+        st.caption(f"Teórico por estoque: {kits_teorico}")
+
+        if st.button("Restaurar padrão"):
+            set_active_rules(DEFAULT_RULES.copy())
+            st.session_state[RULES_EDITOR_VERSION_KEY] = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0) + 1
+            st.session_state.pop(RULES_EDITOR_KEY, None)
+            clear_kit_caches()
+            st.rerun()
+
+        if st.button("Limpar cache e recalcular"):
+            clear_kit_caches()
+            st.rerun()
+
+    st.info(
+        "Exemplo: altere BR - GRANDE de 8 para 5. No próximo rerun, a quantidade de torres, "
+        "o gargalo e os relatórios passam a considerar essa nova regra."
+    )
 
 # =============================
 # TAB 1 - Simulador
@@ -1531,7 +1707,7 @@ with tab1:
 
         if st.button("Gerar kits agora"):
             st.session_state["last_gen"] = generate_kits_reports(
-                base_bytes, float(target_min), float(target_max), int(max_kits)
+                base_bytes, float(target_min), float(target_max), int(max_kits), current_rules_sig
             )
             st.success(f"Kits gerados: {st.session_state['last_gen']['qtd_kits']}")
 
