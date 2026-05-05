@@ -1674,8 +1674,9 @@ with tab1:
         use_container_width=True,
         hide_index=True,
         disabled=["categoria", "Grupo", "Estoque"],
+        column_order=["Grupo", "Estoque", "Mínimo por torre", "Máximo por torre"],
         column_config={
-            "categoria": st.column_config.TextColumn("Código", help="Código interno usado pelo algoritmo."),
+            "categoria": None,
             "Grupo": st.column_config.TextColumn("Grupo", help="Nome exibido para o usuário."),
             "Estoque": st.column_config.NumberColumn(
                 "Estoque",
