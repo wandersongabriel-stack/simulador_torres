@@ -1720,7 +1720,7 @@ with tab0:
             st.rerun()
 
     with col_btn_b:
-        if st.button("Recalcular kits"):
+        if st.button("Limpar cache e recalcular"):
             clear_kit_caches()
             st.rerun()
 
@@ -1880,7 +1880,44 @@ def render_report(tab, key: str, title: str):
         with col_b:
             st.download_button("Baixar CSV", data=df_to_csv_bytes(df), file_name=f"{key}.csv")
 
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        display_report_df = df.copy()
+
+        if key == "falha_proximo_kit" and not display_report_df.empty:
+            # Mantém o Status como última coluna, mas com largura maior para facilitar a leitura.
+            preferred_cols = [
+                "tipo",
+                "categoria",
+                "min",
+                "max",
+                "skus_disponiveis",
+                "estoque_total_categoria",
+            ]
+            ordered_cols = [c for c in preferred_cols if c in display_report_df.columns]
+            ordered_cols += [c for c in display_report_df.columns if c not in ordered_cols and c != "status"]
+            if "status" in display_report_df.columns:
+                ordered_cols.append("status")
+            display_report_df = display_report_df[ordered_cols]
+
+            st.dataframe(
+                display_report_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "status": st.column_config.TextColumn(
+                        "Status",
+                        width="large",
+                        help="Explicação da viabilidade ou do motivo da falha do próximo kit."
+                    ),
+                    "tipo": st.column_config.TextColumn("Tipo", width="medium"),
+                    "categoria": st.column_config.TextColumn("Categoria", width="small"),
+                    "min": st.column_config.TextColumn("Mín.", width="small"),
+                    "max": st.column_config.TextColumn("Máx.", width="small"),
+                    "skus_disponiveis": st.column_config.TextColumn("SKUs disponíveis", width="small"),
+                    "estoque_total_categoria": st.column_config.TextColumn("Estoque total", width="small"),
+                }
+            )
+        else:
+            st.dataframe(display_report_df, use_container_width=True, hide_index=True)
 
 render_report(tab2, "kits_resumo", "Kits resumo")
 render_report(tab3, "kits_itens", "Kits itens")
