@@ -1526,12 +1526,10 @@ with st.sidebar:
     max_kits = st.number_input("Gerar até (máx kits)", min_value=1, max_value=500, value=DEFAULT_MAX_KITS, step=10)
 
 
-# Aplica as regras editadas antes dos cálculos principais.
-# Assim cards, simulador e geração de kits já usam a configuração atual da aba.
-_current_rules_editor_key = f"{RULES_EDITOR_KEY}_{st.session_state.get(RULES_EDITOR_VERSION_KEY, 0)}"
-if _current_rules_editor_key in st.session_state:
-    st.session_state[RULES_EDITOR_KEY] = st.session_state[_current_rules_editor_key]
-apply_rules_from_editor_state()
+# Regras ativas usadas nos cálculos principais.
+# Observação: não lemos diretamente st.session_state[editor_key] do st.data_editor,
+# porque o Streamlit guarda ali um estado interno em dict, não o DataFrame completo.
+# A regra editada é aplicada pelo retorno do st.data_editor na aba de configuração.
 active_rules = get_active_rules()
 RULES.clear()
 RULES.update(active_rules)
@@ -1628,10 +1626,6 @@ with tab0:
         editor_key_version = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0)
         editor_key = f"{RULES_EDITOR_KEY}_{editor_key_version}"
 
-        # Espelha a chave versionada para a chave fixa usada no pré-processamento do rerun.
-        if editor_key in st.session_state:
-            st.session_state[RULES_EDITOR_KEY] = st.session_state[editor_key]
-
         edited_rules_df = st.data_editor(
             rules_to_editor_df(get_active_rules()),
             key=editor_key,
@@ -1655,7 +1649,16 @@ with tab0:
                 ),
             },
         )
-        st.session_state[RULES_EDITOR_KEY] = edited_rules_df
+
+        try:
+            edited_rules = editor_df_to_rules(edited_rules_df)
+            if rules_signature(edited_rules) != rules_signature(get_active_rules()):
+                set_active_rules(edited_rules)
+                st.session_state["rules_validation_error"] = ""
+                clear_kit_caches()
+                st.rerun()
+        except Exception as e:
+            st.session_state["rules_validation_error"] = str(e)
 
     with col_cfg_b:
         st.metric("Torres com a regra atual", kits_real)
