@@ -1720,7 +1720,7 @@ with tab0:
             st.rerun()
 
     with col_btn_b:
-        if st.button("Limpar cache e recalcular"):
+        if st.button("Recalcular kits"):
             clear_kit_caches()
             st.rerun()
 
