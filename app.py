@@ -748,7 +748,17 @@ def by_sku_table(df: pd.DataFrame) -> pd.DataFrame:
         Sku=("Sku", "first"),
     )
 
-def max_kits_category_from_stocks(stocks: np.ndarray, m: int) -> int:
+def max_kits_category_from_stocks(stocks: np.ndarray, m: int):
+    """
+    Calcula a capacidade teórica de uma categoria pelo mínimo exigido.
+
+    Quando m == 0, a categoria não é obrigatória na torre. Nesse caso ela
+    não deve virar gargalo nem zerar a capacidade teórica geral. Por isso
+    retornamos np.inf, e a função geral ignora esse valor na hora do mínimo.
+    """
+    if int(m) <= 0:
+        return np.inf
+
     stocks = np.array(stocks, dtype=int)
     stocks = stocks[stocks > 0]
     if len(stocks) < m:
@@ -782,16 +792,29 @@ def capacity_table_correct(df: pd.DataFrame) -> pd.DataFrame:
             "min_por_kit": mn,
             "skus_unicos": int(sub["Sku_norm"].nunique()),
             "estoque_total": int(sub["Estoque"].sum()),
-            "kits_max_cat": int(kits_cat),
+            "kits_max_cat": kits_cat,
+            "kits_max_cat_exibicao": "Não limita" if np.isinf(kits_cat) else int(kits_cat),
         })
     out = pd.DataFrame(rows)
-    out["gargalo"] = out["kits_max_cat"] == out["kits_max_cat"].min()
-    return out.sort_values(["kits_max_cat", "Grupo"], ascending=[True, True])
+
+    obrigatorias = out[np.isfinite(out["kits_max_cat"])]
+    if obrigatorias.empty:
+        out["gargalo"] = False
+    else:
+        menor = obrigatorias["kits_max_cat"].min()
+        out["gargalo"] = np.isfinite(out["kits_max_cat"]) & (out["kits_max_cat"] == menor)
+
+    return out.sort_values(["gargalo", "kits_max_cat", "Grupo"], ascending=[False, True, True])
 
 def kits_possible_overall_correct(df: pd.DataFrame) -> tuple[int, str, pd.DataFrame]:
     t = capacity_table_correct(df)
-    kits_max = int(t["kits_max_cat"].min()) if len(t) else 0
-    gargalos = t.loc[t["kits_max_cat"] == kits_max, "Grupo"].tolist()
+    obrigatorias = t[np.isfinite(t["kits_max_cat"])]
+
+    if obrigatorias.empty:
+        return 0, "-", t
+
+    kits_max = int(obrigatorias["kits_max_cat"].min())
+    gargalos = obrigatorias.loc[obrigatorias["kits_max_cat"] == kits_max, "Grupo"].tolist()
     gargalo_str = ", ".join(gargalos) if gargalos else "-"
     return kits_max, gargalo_str, t
 
