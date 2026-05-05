@@ -1623,8 +1623,7 @@ if st.session_state.get("use_api", False):
         else:
             st.caption("Nenhum item bloqueado por cadastro/banho inválido.")
 
-tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Configuração da torre",
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "Simulador de compra",
     "Kits resumo",
     "Kits itens",
@@ -1634,9 +1633,9 @@ tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 
 # =============================
-# TAB 0 - Configuração da torre
+# TAB 1 - Simulador
 # =============================
-with tab0:
+with tab1:
     st.subheader("Configuração da torre")
     st.markdown(
         "Edite os mínimos e máximos por grupo para testar cenários. "
@@ -1650,8 +1649,6 @@ with tab0:
     editor_key_version = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0)
     editor_key = f"{RULES_EDITOR_KEY}_{editor_key_version}"
 
-    # Mostra o mesmo estoque total por grupo usado no Simulador de compra.
-    # A coluna é apenas informativa; os campos editáveis continuam sendo mínimo e máximo.
     estoque_por_categoria = (
         by_sku_table(base_df)
         .groupby("categoria", as_index=False)
@@ -1688,7 +1685,7 @@ with tab0:
                 "Mínimo por torre",
                 min_value=0,
                 step=1,
-                help="Quantidade mínima obrigatória desse grupo em cada torre."
+                help="Quantidade mínima obrigatória desse grupo em cada torre. Se ficar vazio, o sistema assume 0."
             ),
             "Máximo por torre": st.column_config.NumberColumn(
                 "Máximo por torre",
@@ -1705,30 +1702,21 @@ with tab0:
             set_active_rules(edited_rules)
             st.session_state["rules_validation_error"] = ""
             clear_kit_caches()
+            st.session_state.pop("last_gen_rules_sig", None)
             st.rerun()
     except Exception as e:
         st.session_state["rules_validation_error"] = str(e)
+
+    if st.button("Restaurar padrão"):
+        set_active_rules(DEFAULT_RULES.copy())
+        st.session_state[RULES_EDITOR_VERSION_KEY] = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0) + 1
+        st.session_state.pop(RULES_EDITOR_KEY, None)
+        clear_kit_caches()
+        st.session_state.pop("last_gen_rules_sig", None)
+        st.rerun()
+
     st.divider()
-    col_btn_a, col_btn_b = st.columns([1, 1])
-    with col_btn_a:
-        if st.button("Restaurar padrão"):
-            set_active_rules(DEFAULT_RULES.copy())
-            st.session_state[RULES_EDITOR_VERSION_KEY] = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0) + 1
-            st.session_state.pop(RULES_EDITOR_KEY, None)
-            clear_kit_caches()
-            st.session_state.pop("last_gen_rules_sig", None)
-            st.rerun()
 
-    with col_btn_b:
-        if st.button("Limpar cache e recalcular"):
-            clear_kit_caches()
-            st.rerun()
-
-
-# =============================
-# TAB 1 - Simulador
-# =============================
-with tab1:
     left, right = st.columns([1.15, 2.85])
 
     sim_table, _, _ = simulator_purchase_table(base_df, int(desired_kits), float(target_min), float(target_max))
