@@ -192,6 +192,9 @@ def clear_kit_caches():
     generate_kits_reports.clear()
     compute_real_kits_count.clear()
     compute_failure_gargalos.clear()
+    # Os relatórios salvos em session_state também dependem das regras.
+    # Se a regra mudar, não podemos continuar exibindo kits gerados com a regra antiga.
+    st.session_state.pop("last_gen", None)
 
 # Gerador
 DEFAULT_MAX_KITS = 200
@@ -1693,6 +1696,7 @@ with tab0:
             st.session_state[RULES_EDITOR_VERSION_KEY] = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0) + 1
             st.session_state.pop(RULES_EDITOR_KEY, None)
             clear_kit_caches()
+            st.session_state.pop("last_gen_rules_sig", None)
             st.rerun()
 
         if st.button("Limpar cache e recalcular"):
@@ -1735,17 +1739,18 @@ with tab1:
             st.session_state["last_gen"] = generate_kits_reports(
                 base_bytes, float(target_min), float(target_max), int(max_kits), current_rules_sig
             )
+            st.session_state["last_gen_rules_sig"] = current_rules_sig
             st.success(f"Kits gerados: {st.session_state['last_gen']['qtd_kits']}")
 
         if "last_gen" in st.session_state:
-            st.info(f"Kits gerados: {st.session_state['last_gen']['qtd_kits']}")
+            if st.session_state.get("last_gen_rules_sig") == current_rules_sig:
+                st.info(f"Kits gerados: {st.session_state['last_gen']['qtd_kits']}")
+            else:
+                st.warning("A configuração da torre mudou. Gere os kits novamente para atualizar os relatórios.")
 
         if st.button("Limpar cache dos kits"):
-            if "last_gen" in st.session_state:
-                del st.session_state["last_gen"]
-            generate_kits_reports.clear()
-            compute_real_kits_count.clear()
-            compute_failure_gargalos.clear()
+            clear_kit_caches()
+            st.session_state.pop("last_gen_rules_sig", None)
             st.info("Cache limpo (kits + métrica do topo).")
 
     with right:
@@ -1841,6 +1846,10 @@ def render_report(tab, key: str, title: str):
 
         if "last_gen" not in st.session_state:
             st.info("Clique em **Gerar kits agora** na aba 'Simulador de compra' para montar os relatórios.")
+            return
+
+        if st.session_state.get("last_gen_rules_sig") != current_rules_sig:
+            st.warning("A configuração da torre mudou. Gere os kits novamente para atualizar este relatório.")
             return
 
         df = st.session_state["last_gen"].get(key)
