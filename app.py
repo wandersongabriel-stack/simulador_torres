@@ -1647,75 +1647,70 @@ with tab0:
     if validation_error:
         st.error(validation_error)
 
-    col_cfg_a, col_cfg_b = st.columns([3, 1])
-    with col_cfg_a:
-        editor_key_version = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0)
-        editor_key = f"{RULES_EDITOR_KEY}_{editor_key_version}"
+    editor_key_version = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0)
+    editor_key = f"{RULES_EDITOR_KEY}_{editor_key_version}"
 
-        # Mostra o mesmo estoque total por grupo usado no Simulador de compra.
-        # A coluna é apenas informativa; os campos editáveis continuam sendo mínimo e máximo.
-        estoque_por_categoria = (
-            by_sku_table(base_df)
-            .groupby("categoria", as_index=False)
-            .agg(Estoque=("Estoque", "sum"))
-        )
-        rules_editor_df = rules_to_editor_df(get_active_rules()).merge(
-            estoque_por_categoria,
-            on="categoria",
-            how="left",
-        )
-        rules_editor_df["Estoque"] = rules_editor_df["Estoque"].fillna(0).astype(int)
-        rules_editor_df = rules_editor_df[[
-            "categoria",
-            "Grupo",
-            "Estoque",
-            "Mínimo por torre",
-            "Máximo por torre",
-        ]]
+    # Mostra o mesmo estoque total por grupo usado no Simulador de compra.
+    # A coluna é apenas informativa; os campos editáveis continuam sendo mínimo e máximo.
+    estoque_por_categoria = (
+        by_sku_table(base_df)
+        .groupby("categoria", as_index=False)
+        .agg(Estoque=("Estoque", "sum"))
+    )
+    rules_editor_df = rules_to_editor_df(get_active_rules()).merge(
+        estoque_por_categoria,
+        on="categoria",
+        how="left",
+    )
+    rules_editor_df["Estoque"] = rules_editor_df["Estoque"].fillna(0).astype(int)
+    rules_editor_df = rules_editor_df[[
+        "categoria",
+        "Grupo",
+        "Estoque",
+        "Mínimo por torre",
+        "Máximo por torre",
+    ]]
 
-        edited_rules_df = st.data_editor(
-            rules_editor_df,
-            key=editor_key,
-            use_container_width=True,
-            hide_index=True,
-            disabled=["categoria", "Grupo", "Estoque"],
-            column_config={
-                "categoria": st.column_config.TextColumn("Código", help="Código interno usado pelo algoritmo."),
-                "Grupo": st.column_config.TextColumn("Grupo", help="Nome exibido para o usuário."),
-                "Estoque": st.column_config.NumberColumn(
-                    "Estoque",
-                    help="Estoque total disponível no grupo, somando os SKUs únicos considerados pela base final."
-                ),
-                "Mínimo por torre": st.column_config.NumberColumn(
-                    "Mínimo por torre",
-                    min_value=0,
-                    step=1,
-                    help="Quantidade mínima obrigatória desse grupo em cada torre."
-                ),
-                "Máximo por torre": st.column_config.NumberColumn(
-                    "Máximo por torre",
-                    min_value=0,
-                    step=1,
-                    help="Quantidade máxima permitida. Deixe vazio para não ter limite máximo."
-                ),
-            },
-        )
+    edited_rules_df = st.data_editor(
+        rules_editor_df,
+        key=editor_key,
+        use_container_width=True,
+        hide_index=True,
+        disabled=["categoria", "Grupo", "Estoque"],
+        column_config={
+            "categoria": st.column_config.TextColumn("Código", help="Código interno usado pelo algoritmo."),
+            "Grupo": st.column_config.TextColumn("Grupo", help="Nome exibido para o usuário."),
+            "Estoque": st.column_config.NumberColumn(
+                "Estoque",
+                help="Estoque total disponível no grupo, somando os SKUs únicos considerados pela base final."
+            ),
+            "Mínimo por torre": st.column_config.NumberColumn(
+                "Mínimo por torre",
+                min_value=0,
+                step=1,
+                help="Quantidade mínima obrigatória desse grupo em cada torre."
+            ),
+            "Máximo por torre": st.column_config.NumberColumn(
+                "Máximo por torre",
+                min_value=0,
+                step=1,
+                help="Quantidade máxima permitida. Deixe vazio para não ter limite máximo."
+            ),
+        },
+    )
 
-        try:
-            edited_rules = editor_df_to_rules(edited_rules_df)
-            if rules_signature(edited_rules) != rules_signature(get_active_rules()):
-                set_active_rules(edited_rules)
-                st.session_state["rules_validation_error"] = ""
-                clear_kit_caches()
-                st.rerun()
-        except Exception as e:
-            st.session_state["rules_validation_error"] = str(e)
-
-    with col_cfg_b:
-        st.metric("Torres com a regra atual", kits_real)
-        st.caption(f"Gargalo(s): {gargalo}")
-        st.caption(f"Teórico por estoque: {kits_teorico}")
-
+    try:
+        edited_rules = editor_df_to_rules(edited_rules_df)
+        if rules_signature(edited_rules) != rules_signature(get_active_rules()):
+            set_active_rules(edited_rules)
+            st.session_state["rules_validation_error"] = ""
+            clear_kit_caches()
+            st.rerun()
+    except Exception as e:
+        st.session_state["rules_validation_error"] = str(e)
+    st.divider()
+    col_btn_a, col_btn_b = st.columns([1, 1])
+    with col_btn_a:
         if st.button("Restaurar padrão"):
             set_active_rules(DEFAULT_RULES.copy())
             st.session_state[RULES_EDITOR_VERSION_KEY] = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0) + 1
@@ -1724,6 +1719,7 @@ with tab0:
             st.session_state.pop("last_gen_rules_sig", None)
             st.rerun()
 
+    with col_btn_b:
         if st.button("Limpar cache e recalcular"):
             clear_kit_caches()
             st.rerun()
