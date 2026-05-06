@@ -65,7 +65,7 @@ if not check_login():
 TARGET_MIN_DEFAULT = 10000
 TARGET_MAX_DEFAULT = 10090
 
-RULES = {
+DEFAULT_RULES = {
     "CJ": (22, 25),
     "CK": (8, 12),
     "CO": (20, 28),
@@ -81,7 +81,14 @@ RULES = {
     "BR_DEMAIS": (60, None),
 }
 
-PREFIX_DIRECT = ["CJ", "CK", "CO", "ES", "PF", "SEM", "PM", "PR"]
+# RULES começa com o padrão, mas pode ser sobrescrito pela aba "Configuração da torre".
+# Mantive esse nome porque o restante do algoritmo já usa RULES como fonte das regras ativas.
+RULES = DEFAULT_RULES.copy()
+RULES_CONFIG_KEY = "rules_config"
+RULES_EDITOR_KEY = "rules_editor"
+RULES_EDITOR_VERSION_KEY = "rules_editor_version"
+
+PREFIX_DIRECT = ["CJ", "CK", "CO", "ES", "PF", "PR", "SEM", "PM"]
 ADJUST_CATS = {"BR_DEMAIS", "CO"} 
 
 DISPLAY_NAME = {
@@ -99,6 +106,97 @@ DISPLAY_NAME = {
     "BR_GRANDE": "BR - GRANDE",
     "BR_DEMAIS": "BR - OUTROS",
 }
+
+
+def normalize_rules_config(rules: dict | None) -> dict:
+    """Garante que todas as categorias existam e que mínimo/máximo estejam normalizados."""
+    src = rules or DEFAULT_RULES
+    normalized = {}
+    for cat, default_pair in DEFAULT_RULES.items():
+        mn, mx = src.get(cat, default_pair)
+        mn = int(mn)
+        mx = None if pd.isna(mx) else int(mx)
+        if mn < 0:
+            raise ValueError(f"{DISPLAY_NAME.get(cat, cat)}: o mínimo não pode ser negativo.")
+        if mx is not None and mx < mn:
+            raise ValueError(f"{DISPLAY_NAME.get(cat, cat)}: o máximo não pode ser menor que o mínimo.")
+        normalized[cat] = (mn, mx)
+    return normalized
+
+
+def get_active_rules() -> dict:
+    if RULES_CONFIG_KEY not in st.session_state:
+        st.session_state[RULES_CONFIG_KEY] = DEFAULT_RULES.copy()
+    return normalize_rules_config(st.session_state[RULES_CONFIG_KEY])
+
+
+def set_active_rules(rules: dict):
+    st.session_state[RULES_CONFIG_KEY] = normalize_rules_config(rules)
+
+
+def rules_to_editor_df(rules: dict) -> pd.DataFrame:
+    rows = []
+    for cat, (mn, mx) in rules.items():
+        rows.append({
+            "categoria": cat,
+            "Grupo": DISPLAY_NAME.get(cat, cat),
+            "Mínimo por torre": int(mn),
+            "Máximo por torre": None if mx is None else int(mx),
+        })
+    return pd.DataFrame(rows)
+
+
+def editor_df_to_rules(df: pd.DataFrame) -> dict:
+    if df is None or len(df) == 0:
+        raise ValueError("A configuração da torre está vazia.")
+
+    out = {}
+    df = pd.DataFrame(df).copy()
+    for _, row in df.iterrows():
+        cat = str(row.get("categoria", "")).strip()
+        if cat not in DEFAULT_RULES:
+            continue
+
+        mn_raw = row.get("Mínimo por torre")
+        mx_raw = row.get("Máximo por torre")
+
+        # Se o usuário apagar o mínimo, o sistema assume 0.
+        # Isso evita erro visual na tela e permite desativar um grupo sem precisar digitar 0 manualmente.
+        mn = 0 if pd.isna(mn_raw) else int(mn_raw)
+        mx = None if pd.isna(mx_raw) else int(mx_raw)
+        out[cat] = (mn, mx)
+
+    missing = [cat for cat in DEFAULT_RULES if cat not in out]
+    if missing:
+        raise ValueError("Categorias ausentes na configuração: " + ", ".join(missing))
+
+    return normalize_rules_config(out)
+
+
+def rules_signature(rules: dict) -> tuple:
+    """Assinatura estável usada para invalidar cache quando os parâmetros mudam."""
+    return tuple((cat, int(mn), None if mx is None else int(mx)) for cat, (mn, mx) in rules.items())
+
+
+def apply_rules_from_editor_state():
+    """Aplica automaticamente alterações feitas no data_editor antes de calcular os cards/abas."""
+    if RULES_EDITOR_KEY not in st.session_state:
+        return
+    try:
+        rules = editor_df_to_rules(st.session_state[RULES_EDITOR_KEY])
+        set_active_rules(rules)
+        st.session_state["rules_validation_error"] = ""
+    except Exception as e:
+        st.session_state["rules_validation_error"] = str(e)
+
+
+def clear_kit_caches():
+    generate_kits_reports.clear()
+    compute_real_kits_count.clear()
+    compute_failure_gargalos.clear()
+    # Os relatórios salvos em session_state também dependem das regras.
+    # Se a regra mudar, não podemos continuar exibindo kits gerados com a regra antiga.
+    st.session_state.pop("last_gen", None)
 
 # Gerador
 DEFAULT_MAX_KITS = 200
@@ -655,7 +753,17 @@ def by_sku_table(df: pd.DataFrame) -> pd.DataFrame:
         Sku=("Sku", "first"),
     )
 
-def max_kits_category_from_stocks(stocks: np.ndarray, m: int) -> int:
+def max_kits_category_from_stocks(stocks: np.ndarray, m: int):
+    """
+    Calcula a capacidade teórica de uma categoria pelo mínimo exigido.
+
+    Quando m == 0, a categoria não é obrigatória na torre. Nesse caso ela
+    não deve virar gargalo nem zerar a capacidade teórica geral. Por isso
+    retornamos np.inf, e a função geral ignora esse valor na hora do mínimo.
+    """
+    if int(m) <= 0:
+        return np.inf
+
     stocks = np.array(stocks, dtype=int)
     stocks = stocks[stocks > 0]
     if len(stocks) < m:
@@ -689,16 +797,29 @@ def capacity_table_correct(df: pd.DataFrame) -> pd.DataFrame:
             "min_por_kit": mn,
             "skus_unicos": int(sub["Sku_norm"].nunique()),
             "estoque_total": int(sub["Estoque"].sum()),
-            "kits_max_cat": int(kits_cat),
+            "kits_max_cat": kits_cat,
+            "kits_max_cat_exibicao": "Não limita" if np.isinf(kits_cat) else int(kits_cat),
         })
     out = pd.DataFrame(rows)
-    out["gargalo"] = out["kits_max_cat"] == out["kits_max_cat"].min()
-    return out.sort_values(["kits_max_cat", "Grupo"], ascending=[True, True])
+
+    obrigatorias = out[np.isfinite(out["kits_max_cat"])]
+    if obrigatorias.empty:
+        out["gargalo"] = False
+    else:
+        menor = obrigatorias["kits_max_cat"].min()
+        out["gargalo"] = np.isfinite(out["kits_max_cat"]) & (out["kits_max_cat"] == menor)
+
+    return out.sort_values(["gargalo", "kits_max_cat", "Grupo"], ascending=[False, True, True])
 
 def kits_possible_overall_correct(df: pd.DataFrame) -> tuple[int, str, pd.DataFrame]:
     t = capacity_table_correct(df)
-    kits_max = int(t["kits_max_cat"].min()) if len(t) else 0
-    gargalos = t.loc[t["kits_max_cat"] == kits_max, "Grupo"].tolist()
+    obrigatorias = t[np.isfinite(t["kits_max_cat"])]
+
+    if obrigatorias.empty:
+        return 0, "-", t
+
+    kits_max = int(obrigatorias["kits_max_cat"].min())
+    gargalos = obrigatorias.loc[obrigatorias["kits_max_cat"] == kits_max, "Grupo"].tolist()
     gargalo_str = ", ".join(gargalos) if gargalos else "-"
     return kits_max, gargalo_str, t
 
@@ -1241,7 +1362,7 @@ def diagnose_next_kit(stock, pools, price):
 # CACHE DO GERADOR (relatórios)
 # =============================
 @st.cache_data(show_spinner=False)
-def generate_kits_reports(base_bytes: bytes, tmin: float, tmax: float, max_kits: int) -> dict:
+def generate_kits_reports(base_bytes: bytes, tmin: float, tmax: float, max_kits: int, rules_sig: tuple | None = None) -> dict:
     base = load_base_from_bytes(base_bytes)
     stock0, price, cat_of, pools = build_structures(base)
 
@@ -1330,13 +1451,13 @@ def generate_kits_reports(base_bytes: bytes, tmin: float, tmax: float, max_kits:
     }
 
 @st.cache_data(show_spinner=False)
-def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kits: int) -> int:
-    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits)
+def compute_real_kits_count(base_bytes: bytes, tmin: float, tmax: float, max_kits: int, rules_sig: tuple | None = None) -> int:
+    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits, rules_sig)
     return int(reports.get("qtd_kits", 0))
 
 @st.cache_data(show_spinner=False)
-def compute_failure_gargalos(base_bytes: bytes, tmin: float, tmax: float, max_kits: int) -> str:
-    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits)
+def compute_failure_gargalos(base_bytes: bytes, tmin: float, tmax: float, max_kits: int, rules_sig: tuple | None = None) -> str:
+    reports = generate_kits_reports(base_bytes, tmin, tmax, max_kits, rules_sig)
     falha_df = reports.get("falha_proximo_kit", pd.DataFrame())
 
     if falha_df is None or falha_df.empty:
@@ -1433,6 +1554,15 @@ with st.sidebar:
     max_kits = st.number_input("Gerar até (máx kits)", min_value=1, max_value=500, value=DEFAULT_MAX_KITS, step=10)
 
 
+# Regras ativas usadas nos cálculos principais.
+# Observação: não lemos diretamente st.session_state[editor_key] do st.data_editor,
+# porque o Streamlit guarda ali um estado interno em dict, não o DataFrame completo.
+# A regra editada é aplicada pelo retorno do st.data_editor na aba de configuração.
+active_rules = get_active_rules()
+RULES.clear()
+RULES.update(active_rules)
+current_rules_sig = rules_signature(active_rules)
+
 # =============================
 # MAIN
 # =============================
@@ -1443,8 +1573,8 @@ except Exception as e:
     st.stop()
 
 kits_teorico, gargalo_teorico, _ = kits_possible_overall_correct(base_df)
-gargalo = compute_failure_gargalos(base_bytes, float(target_min), float(target_max), int(max_kits))
-kits_real = compute_real_kits_count(base_bytes, float(target_min), float(target_max), int(max_kits))
+gargalo = compute_failure_gargalos(base_bytes, float(target_min), float(target_max), int(max_kits), current_rules_sig)
+kits_real = compute_real_kits_count(base_bytes, float(target_min), float(target_max), int(max_kits), current_rules_sig)
 
 c1, c2 = st.columns([2.6, 1.0])
 
@@ -1508,6 +1638,88 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # TAB 1 - Simulador
 # =============================
 with tab1:
+    st.subheader("Configuração da torre")
+    st.markdown(
+        "Edite os mínimos e máximos por grupo para testar cenários. "
+        "As alterações são aplicadas automaticamente nos cards, no simulador e na geração de kits."
+    )
+
+    validation_error = st.session_state.get("rules_validation_error", "")
+    if validation_error:
+        st.error(validation_error)
+
+    editor_key_version = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0)
+    editor_key = f"{RULES_EDITOR_KEY}_{editor_key_version}"
+
+    estoque_por_categoria = (
+        by_sku_table(base_df)
+        .groupby("categoria", as_index=False)
+        .agg(Estoque=("Estoque", "sum"))
+    )
+    rules_editor_df = rules_to_editor_df(get_active_rules()).merge(
+        estoque_por_categoria,
+        on="categoria",
+        how="left",
+    )
+    rules_editor_df["Estoque"] = rules_editor_df["Estoque"].fillna(0).astype(int)
+    rules_editor_df = rules_editor_df[[
+        "categoria",
+        "Grupo",
+        "Estoque",
+        "Mínimo por torre",
+        "Máximo por torre",
+    ]]
+
+    edited_rules_df = st.data_editor(
+        rules_editor_df,
+        key=editor_key,
+        use_container_width=True,
+        hide_index=True,
+        disabled=["categoria", "Grupo", "Estoque"],
+        column_order=["Grupo", "Estoque", "Mínimo por torre", "Máximo por torre"],
+        column_config={
+            "categoria": None,
+            "Grupo": st.column_config.TextColumn("Grupo", help="Nome exibido para o usuário."),
+            "Estoque": st.column_config.NumberColumn(
+                "Estoque",
+                help="Estoque total disponível no grupo, somando os SKUs únicos considerados pela base final."
+            ),
+            "Mínimo por torre": st.column_config.NumberColumn(
+                "Mínimo por torre",
+                min_value=0,
+                step=1,
+                help="Quantidade mínima obrigatória desse grupo em cada torre. Se ficar vazio, o sistema assume 0."
+            ),
+            "Máximo por torre": st.column_config.NumberColumn(
+                "Máximo por torre",
+                min_value=0,
+                step=1,
+                help="Quantidade máxima permitida. Deixe vazio para não ter limite máximo."
+            ),
+        },
+    )
+
+    try:
+        edited_rules = editor_df_to_rules(edited_rules_df)
+        if rules_signature(edited_rules) != rules_signature(get_active_rules()):
+            set_active_rules(edited_rules)
+            st.session_state["rules_validation_error"] = ""
+            clear_kit_caches()
+            st.session_state.pop("last_gen_rules_sig", None)
+            st.rerun()
+    except Exception as e:
+        st.session_state["rules_validation_error"] = str(e)
+
+    if st.button("Restaurar padrão"):
+        set_active_rules(DEFAULT_RULES.copy())
+        st.session_state[RULES_EDITOR_VERSION_KEY] = st.session_state.get(RULES_EDITOR_VERSION_KEY, 0) + 1
+        st.session_state.pop(RULES_EDITOR_KEY, None)
+        clear_kit_caches()
+        st.session_state.pop("last_gen_rules_sig", None)
+        st.rerun()
+
+    st.divider()
+
     left, right = st.columns([1.15, 2.85])
 
     sim_table, _, _ = simulator_purchase_table(base_df, int(desired_kits), float(target_min), float(target_max))
@@ -1533,19 +1745,20 @@ with tab1:
 
         if st.button("Gerar kits agora"):
             st.session_state["last_gen"] = generate_kits_reports(
-                base_bytes, float(target_min), float(target_max), int(max_kits)
+                base_bytes, float(target_min), float(target_max), int(max_kits), current_rules_sig
             )
+            st.session_state["last_gen_rules_sig"] = current_rules_sig
             st.success(f"Kits gerados: {st.session_state['last_gen']['qtd_kits']}")
 
         if "last_gen" in st.session_state:
-            st.info(f"Kits gerados: {st.session_state['last_gen']['qtd_kits']}")
+            if st.session_state.get("last_gen_rules_sig") == current_rules_sig:
+                st.info(f"Kits gerados: {st.session_state['last_gen']['qtd_kits']}")
+            else:
+                st.warning("A configuração da torre mudou. Gere os kits novamente para atualizar os relatórios.")
 
         if st.button("Limpar cache dos kits"):
-            if "last_gen" in st.session_state:
-                del st.session_state["last_gen"]
-            generate_kits_reports.clear()
-            compute_real_kits_count.clear()
-            compute_failure_gargalos.clear()
+            clear_kit_caches()
+            st.session_state.pop("last_gen_rules_sig", None)
             st.info("Cache limpo (kits + métrica do topo).")
 
     with right:
@@ -1643,6 +1856,10 @@ def render_report(tab, key: str, title: str):
             st.info("Clique em **Gerar kits agora** na aba 'Simulador de compra' para montar os relatórios.")
             return
 
+        if st.session_state.get("last_gen_rules_sig") != current_rules_sig:
+            st.warning("A configuração da torre mudou. Gere os kits novamente para atualizar este relatório.")
+            return
+
         df = st.session_state["last_gen"].get(key)
         if df is None:
             st.warning("Relatório não disponível.")
@@ -1654,7 +1871,44 @@ def render_report(tab, key: str, title: str):
         with col_b:
             st.download_button("Baixar CSV", data=df_to_csv_bytes(df), file_name=f"{key}.csv")
 
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        display_report_df = df.copy()
+
+        if key == "falha_proximo_kit" and not display_report_df.empty:
+            # Mantém o Status como última coluna, mas com largura maior para facilitar a leitura.
+            preferred_cols = [
+                "tipo",
+                "categoria",
+                "min",
+                "max",
+                "skus_disponiveis",
+                "estoque_total_categoria",
+            ]
+            ordered_cols = [c for c in preferred_cols if c in display_report_df.columns]
+            ordered_cols += [c for c in display_report_df.columns if c not in ordered_cols and c != "status"]
+            if "status" in display_report_df.columns:
+                ordered_cols.append("status")
+            display_report_df = display_report_df[ordered_cols]
+
+            st.dataframe(
+                display_report_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "status": st.column_config.TextColumn(
+                        "Status",
+                        width="large",
+                        help="Explicação da viabilidade ou do motivo da falha do próximo kit."
+                    ),
+                    "tipo": st.column_config.TextColumn("Tipo", width="medium"),
+                    "categoria": st.column_config.TextColumn("Categoria", width="small"),
+                    "min": st.column_config.TextColumn("Mín.", width="small"),
+                    "max": st.column_config.TextColumn("Máx.", width="small"),
+                    "skus_disponiveis": st.column_config.TextColumn("SKUs disponíveis", width="small"),
+                    "estoque_total_categoria": st.column_config.TextColumn("Estoque total", width="small"),
+                }
+            )
+        else:
+            st.dataframe(display_report_df, use_container_width=True, hide_index=True)
 
 render_report(tab2, "kits_resumo", "Kits resumo")
 render_report(tab3, "kits_itens", "Kits itens")
