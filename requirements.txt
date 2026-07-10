@@ -1,6 +1,7 @@
-streamlit
-pandas
-numpy
-requests
-openpyxl
-xlsxwriter
+streamlit==1.56.0
+pandas==2.2.3
+numpy==2.2.6
+pyarrow==19.0.1
+requests==2.32.5
+openpyxl==3.1.5
+xlsxwriter==3.2.5
